@@ -1,4 +1,6 @@
-"""Core maze logic: server-side session state, layer transitions, fake exit, delays.
+"""Core maze logic: server-side session state, layer transitions, fake exit.
+
+Delays and rate limits live in throttle.py.
 
 Kept free of Flask so it can be tested and reasoned about on its own.
 """
@@ -28,7 +30,6 @@ REAL_PASSWORD_REDACTED = "[REDACTED:REAL_PASSWORD]"
 @dataclass
 class SessionState:
     layer: int = 1
-    failures: int = 0
     # Decoy password the attacker used to clear each layer (layer -> password).
     cleared_with: dict = field(default_factory=dict)
     last_seen: float = field(default_factory=time.time)
@@ -63,13 +64,6 @@ class SessionStore:
             return state
 
 
-def compute_delay(failures: int, base: float, maximum: float) -> float:
-    """Exponential back-off: 1s, 2s, 4s, 8s, 8s ... for base=1, max=8."""
-    if failures <= 0 or base <= 0:
-        return 0.0
-    return min(base * (2 ** (failures - 1)), maximum)
-
-
 def _equals(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
@@ -81,7 +75,7 @@ class Result:
     layer_before: int
     layer_after: int
     log_password: str  # what is safe to write to the log
-    failed: bool       # whether this counts toward the stalling delay
+    failed: bool       # counts toward the per-IP back-off
 
 
 class Maze:
@@ -92,8 +86,11 @@ class Maze:
     def _is_real(self, password: str) -> bool:
         return _equals(password, self._real_password)
 
-    def _safe_for_log(self, password: str) -> str:
+    def redact(self, password: str) -> str:
+        """Return a version of the password that is safe to write to the log."""
         return REAL_PASSWORD_REDACTED if self._is_real(password) else password
+
+    _safe_for_log = redact
 
     def login(self, state: SessionState, password: str) -> Result:
         before = state.layer
@@ -103,18 +100,14 @@ class Maze:
             if password in self.decoys[before]:
                 state.cleared_with[before] = password
                 state.layer = before + 1
-                state.failures = 0
                 ordinal = "First" if before == 1 else "Second"
                 return Result(DECOY_FOUND, f"{ordinal} password found. Proceed to layer {state.layer}.",
                               before, state.layer, log_pw, False)
-            state.failures += 1
             return Result(WRONG, "Wrong password.", before, before, log_pw, True)
 
         # Final layer: the only place the real password is checked.
         if self._is_real(password):
-            state.failures = 0
             return Result(REAL_SUCCESS, "Access granted.", before, before, log_pw, False)
-        state.failures += 1
         return Result(WRONG, "Wrong password.", before, before, log_pw, True)
 
     def exit(self, state: SessionState, answers: dict) -> Result:
@@ -134,10 +127,8 @@ class Maze:
         ok = all(_equals(answers.get(i, ""), state.cleared_with.get(i, "\x00")) for i in required)
         if ok:
             state.layer = 1
-            state.failures = 0
             state.cleared_with.clear()
             return Result(EXIT_GRANTED, "Exit verified. Returning to the entrance.",
                           before, 1, log_pw, False)
-        state.failures += 1
         return Result(EXIT_DENIED, "Exit denied. Previous layer passwords do not match.",
                       before, before, log_pw, True)

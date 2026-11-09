@@ -1,16 +1,31 @@
 {
   "_comment": "Decoy passwords only. The real password is NEVER stored here; it comes from the MAZE_REAL_PASSWORD environment variable.",
   "layers": {
-    "1": ["admin123", "Winter2024!", "letmein", "P@ssw0rd"],
-    "2": ["root!2024", "SuperSecret99", "changeme_now", "Qwerty#123"]
+    "1": [
+      "admin123",
+      "Winter2024!",
+      "letmein",
+      "P@ssw0rd"
+    ],
+    "2": [
+      "root!2024",
+      "SuperSecret99",
+      "changeme_now",
+      "Qwerty#123"
+    ]
   },
   "delay": {
     "enabled": true,
     "base_seconds": 1,
-    "max_seconds": 8
+    "max_seconds": 8,
+    "reset_after_seconds": 900
   },
   "logging": {
     "max_password_length": 128,
     "max_user_agent_length": 256
+  },
+  "limits": {
+    "per_ip_concurrency": 2,
+    "global_concurrency": 32
   }
 }

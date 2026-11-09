@@ -57,11 +57,15 @@ def load_layer_config(path=None) -> dict:
 
     delay = raw.get("delay", {})
     log_cfg = raw.get("logging", {})
+    limits = raw.get("limits", {})
     config = {
         "decoys": decoys,
         "delay_enabled": bool(delay.get("enabled", True)),
         "delay_base": float(delay.get("base_seconds", 1)),
         "delay_max": float(delay.get("max_seconds", 8)),
+        "delay_reset_after": float(delay.get("reset_after_seconds", 900)),
+        "per_ip_concurrency": int(limits.get("per_ip_concurrency", 2)),
+        "global_concurrency": int(limits.get("global_concurrency", 32)),
         "max_password_length": int(log_cfg.get("max_password_length", 128)),
         "max_user_agent_length": int(log_cfg.get("max_user_agent_length", 256)),
     }
@@ -73,6 +77,8 @@ def load_layer_config(path=None) -> dict:
 
     if config["delay_base"] < 0 or config["delay_max"] < config["delay_base"]:
         raise ConfigError("Invalid delay settings: need 0 <= base_seconds <= max_seconds")
+    if config["per_ip_concurrency"] < 1 or config["global_concurrency"] < 1:
+        raise ConfigError("Concurrency limits must be >= 1")
     return config
 
 
