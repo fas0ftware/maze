@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Exit verification</h1>
+  {% if required|length == 0 %}
+    <p>There is no exit from here.</p>
+  {% else %}
+    <p>To leave safely, confirm the passwords of the previous stages.</p>
+  {% endif %}
+  <form method="post" action="/exit" autocomplete="off">
+    {% for i in required %}
+      <label for="layer{{ i }}">Stage {{ i }} password</label>
+      <input id="layer{{ i }}" name="layer{{ i }}" type="password" maxlength="256">
+    {% endfor %}
+    <button type="submit">Confirm exit</button>
+  </form>
+  <p class="meta"><a href="/">Back to sign in</a></p>
+{% endblock %}

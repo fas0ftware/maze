@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure Portal</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f2f3f5; margin: 0; }
+    main { max-width: 360px; margin: 10vh auto; background: #fff; padding: 2rem;
+           border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    h1 { font-size: 1.25rem; margin-top: 0; }
+    label { display: block; margin: .75rem 0 .25rem; font-size: .9rem; }
+    input { width: 100%; padding: .5rem; box-sizing: border-box; }
+    button { margin-top: 1rem; width: 100%; padding: .6rem; }
+    .msg { padding: .5rem; border-radius: 4px; background: #eef; margin-bottom: 1rem; }
+    .meta { font-size: .8rem; color: #666; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <main data-layer="{{ layer }}" data-outcome="{{ outcome }}">
+    {% if message %}<div class="msg">{{ message }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
