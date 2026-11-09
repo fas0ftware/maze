@@ -33,12 +33,38 @@ back-off delay grows.
 **This is not a real lock or an access control.** It exists only to waste the
 attacker's time and to produce more log data. Nothing is protected by it.
 
-### Stalling delay
+### Stalling delay and rate limits
 
-Every wrong login or denied exit makes the response slower: 1s, 2s, 4s, then
-8s for each further failure (capped). Finding a decoy resets the counter.
-You can change these values in `config/layers.json` under `delay`, or turn the
-delay off with `MAZE_DELAY_ENABLED=0`. Tests turn it off.
+Every login or exit attempt waits before it is answered. The wait depends only
+on how many times **this IP** has failed recently: 1s, 2s, 4s, then 8s (capped).
+
+The design blocks the usual shortcuts:
+
+* **No timing oracle.** The delay is applied *before* the password is checked,
+  and correct guesses wait exactly as long as wrong ones. A client cannot hang up
+  early on slow replies and treat them as "wrong".
+* **Keyed by IP, not by session.** Dropping the cookie does not reset the delay.
+  Finding a decoy does not reset it either. It resets after
+  `reset_after_seconds` (default 900) without failures, or on the real password.
+* **Concurrency caps.** At most `per_ip_concurrency` (default 2) requests per IP
+  and `global_concurrency` (default 32) in total are processed at once. Extra
+  requests are refused immediately with HTTP 429, so sleeping threads cannot
+  pile up and exhaust the server.
+* **No machine-readable tells.** Every evaluated attempt returns HTTP 200 with the
+  same page. Only the visible message differs.
+
+All of this is in `config/layers.json` (`delay`, `limits`). `MAZE_DELAY_ENABLED=0`
+turns the delay off. Tests turn it off or record sleeps instead of sleeping.
+
+Resulting worst-case guessing rates on layer 3:
+
+| Attacker | Rate |
+|----------|------|
+| One IP | <= 2 slots / 8s = **0.25 guesses/s** |
+| Many IPs (e.g. a botnet) | <= 32 slots / 1s = **32 guesses/s** (global cap) |
+
+This slows an attacker down. It does **not** make a weak real password strong.
+Use a long, random `MAZE_REAL_PASSWORD` (60+ bits, e.g. 12+ random characters).
 
 ### Logging
 
@@ -53,7 +79,7 @@ Every attempt is written to SQLite (`maze.db` by default; override with
 | `action` | `login` or `exit` |
 | `layer` | Layer the attempt was made on |
 | `password` | Attempted password(s); exit answers are joined with ` \| ` |
-| `outcome` | `wrong`, `decoy_found`, `real_success`, `exit_denied`, `exit_granted`, `exit_unavailable` |
+| `outcome` | `wrong`, `decoy_found`, `real_success`, `exit_denied`, `exit_granted`, `exit_unavailable`, `throttled` |
 | `user_agent` | Client User-Agent |
 | `seconds_since_prev` | Seconds since the previous attempt from the same IP |
 
@@ -69,7 +95,8 @@ Input is treated as untrusted:
 ## Project layout
 
 ```
-app/                Flask service (maze.py = core logic, storage.py = SQLite log)
+app/                Flask service (maze.py = core logic, throttle.py = delay/limits,
+                    storage.py = SQLite log)
 config/layers.json  Decoy password lists and tunables (no real password!)
 tests/              pytest suite
 tools/attacker_sim.py  Local attacker simulator (+ wordlist.txt)
@@ -125,13 +152,17 @@ pytest
 
 The tests cover layer transitions, the real password on and off layer 3, exit
 rules, logging (including redaction, truncation and control characters), SQL
-injection payloads, delay timing, and refusing to start without a password.
+injection payloads, refusing to start without a password, and the hardening
+rules: equal delay for right and wrong guesses, per-IP delay that survives
+cookie loss and decoys, quiet-period reset, and concurrency caps.
 
 ## Security note
 
 **Local testing only. Do not expose Maze to the internet without isolation.**
-This prototype runs the Flask development server, keeps sessions in memory,
-and has not been hardened. If you deploy it as a real honeypot, run it in an
+This prototype runs the Flask development server and keeps sessions and
+throttle state in memory (lost on restart). The global concurrency cap also
+means a flood can make the page unavailable to everyone; for a honeypot this
+is acceptable, for a real login it would not be. If you deploy it as a real honeypot, run it in an
 isolated, disposable environment (separate host/VM/container, no access to
 real systems or credentials, egress filtering) and treat its logs as hostile
 data.
@@ -141,6 +172,8 @@ data.
 Out of scope for this prototype:
 
 - **Docker**: containerized, isolated deployment with a production WSGI server.
+- Async delays (ASGI), so a waiting request does not hold a thread.
+- Persist session and throttle state across restarts.
 - **Minotor**: a companion service for log analysis, alerting and IP blocking
   on *our own* infrastructure.
 - An SSH-like service as another maze entrance.
