@@ -1,0 +1,11 @@
+# Demo wordlist for tools/attacker_sim.py
+# A few common guesses plus some "leaked" decoys from config/layers.json.
+123456
+password
+admin123
+qwerty
+SuperSecret99
+root!2024
+hunter2
+letmein
+trustno1
