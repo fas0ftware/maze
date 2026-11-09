@@ -256,3 +256,7 @@ then. Goals for the port:
 - An SSH-like service as another maze entrance.
 
 Maze will not include hack-back or any offensive action against real systems.
+
+## License
+
+[MIT](LICENSE)
