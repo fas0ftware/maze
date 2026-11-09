@@ -22,8 +22,19 @@ from pathlib import Path
 
 DEFAULT_WORDLIST = Path(__file__).with_name("wordlist.txt")
 USER_AGENT = "maze-attacker-sim/0.1"
-LAYER_RE = re.compile(r'data-layer="(\d)"')
-OUTCOME_RE = re.compile(r'data-outcome="([a-z_]*)"')
+LAYER_RE = re.compile(r"Stage (\d) of 3")
+MESSAGE_RE = re.compile(r'<div class="msg">(.*?)</div>')
+# The service exposes no machine-readable markers; like a real attacker,
+# we infer the result from the visible message.
+MESSAGE_TO_OUTCOME = [
+    ("password found", "decoy_found"),
+    ("Wrong password", "wrong"),
+    ("Access granted", "real_success"),
+    ("Exit verified", "exit_granted"),
+    ("Exit denied", "exit_denied"),
+    ("No exit from here", "exit_unavailable"),
+    ("Too many requests", "throttled"),
+]
 
 
 def ensure_loopback(url: str) -> None:
@@ -50,11 +61,15 @@ class Client:
         try:
             with self.opener.open(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as err:  # 401 on wrong password is expected
+        except urllib.error.HTTPError as err:  # 429 when throttled
             html = err.read().decode("utf-8", "replace")
         layer = int(LAYER_RE.search(html).group(1))
-        m = OUTCOME_RE.search(html)
-        return layer, (m.group(1) if m else "")
+        m = MESSAGE_RE.search(html)
+        outcome = ""
+        if m:
+            outcome = next((o for needle, o in MESSAGE_TO_OUTCOME if needle in m.group(1)),
+                           "unknown")
+        return layer, outcome
 
 
 def load_words(path: Path):

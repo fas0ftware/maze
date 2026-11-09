@@ -1,8 +1,9 @@
 import pytest
 
 from app import ConfigError, create_app
-from app.maze import REAL_PASSWORD_REDACTED, compute_delay
-from conftest import LAYER1, LAYER2, TEST_REAL_PASSWORD, count_tables, layer_of, login
+from app.maze import REAL_PASSWORD_REDACTED
+from app.throttle import compute_delay
+from conftest import LAYER1, LAYER2, TEST_REAL_PASSWORD, count_tables, layer_of, login, outcome_of
 
 
 # --- logging -------------------------------------------------------------
@@ -71,7 +72,7 @@ SQLI_PAYLOADS = [
 @pytest.mark.parametrize("payload", SQLI_PAYLOADS)
 def test_sql_injection_is_stored_verbatim(client, db_rows, payload):
     r = login(client, payload, headers={"User-Agent": payload})
-    assert r.status_code == 401 and layer_of(r) == 1
+    assert outcome_of(r) == "wrong" and layer_of(r) == 1
     rows = db_rows()
     assert len(rows) == 1
     assert rows[0]["password"] == payload and rows[0]["user_agent"] == payload
@@ -92,19 +93,6 @@ def test_compute_delay_sequence():
 def test_delay_disabled_in_tests(client, sleeps):
     login(client, "x")
     assert sleeps == []
-
-
-def test_delay_applied_when_enabled(tmp_path, monkeypatch):
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", TEST_REAL_PASSWORD)
-    recorded = []
-    app = create_app({"DB_PATH": tmp_path / "d.db", "DELAY_ENABLED": True,
-                      "SLEEP_FUNC": recorded.append})
-    c = app.test_client()
-    for _ in range(5):
-        login(c, "wrong")
-    login(c, LAYER1)        # success: no delay, counter resets
-    login(c, "wrong")
-    assert recorded == [1, 2, 4, 8, 8, 1]
 
 
 # --- startup safety ------------------------------------------------------

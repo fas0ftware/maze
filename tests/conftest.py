@@ -41,12 +41,31 @@ def db_rows(app):
     return rows
 
 
+# The page has no machine-readable markers on purpose; read the visible text.
+MESSAGE_TO_OUTCOME = [
+    ("password found", "decoy_found"),
+    ("Wrong password", "wrong"),
+    ("Access granted", "real_success"),
+    ("Exit verified", "exit_granted"),
+    ("Exit denied", "exit_denied"),
+    ("No exit from here", "exit_unavailable"),
+    ("Too many requests", "throttled"),
+]
+
+
 def layer_of(response) -> int:
-    return int(re.search(rb'data-layer="(\d)"', response.data).group(1))
+    return int(re.search(rb"Stage (\d) of 3", response.data).group(1))
 
 
 def outcome_of(response) -> str:
-    return re.search(rb'data-outcome="([a-z_]*)"', response.data).group(1).decode()
+    m = re.search(rb'<div class="msg">(.*?)</div>', response.data)
+    if not m:
+        return ""
+    text = m.group(1).decode()
+    for needle, outcome in MESSAGE_TO_OUTCOME:
+        if needle in text:
+            return outcome
+    raise AssertionError(f"Unknown message: {text!r}")
 
 
 def login(client, password, **kwargs):

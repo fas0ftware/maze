@@ -7,7 +7,7 @@ def test_starts_at_layer_one(client):
 
 def test_wrong_password_stays_on_layer_one(client):
     r = login(client, "nope")
-    assert r.status_code == 401
+    assert r.status_code == 200  # same status as success: no easy tell
     assert layer_of(r) == 1
     assert outcome_of(r) == "wrong"
 
@@ -39,7 +39,7 @@ def test_wrong_password_on_layer_three(client):
     login(client, LAYER1)
     login(client, LAYER2)
     r = login(client, "definitely-wrong")
-    assert r.status_code == 401 and outcome_of(r) == "wrong" and layer_of(r) == 3
+    assert outcome_of(r) == "wrong" and layer_of(r) == 3
 
 
 def test_decoy_is_wrong_on_layer_three(client):
