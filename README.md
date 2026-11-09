@@ -63,6 +63,10 @@ python -m app
   layer 3, so it is rejected on layers 1 and 2.
 - Session state (current layer, decoys used) is kept **on the server**, in
   memory. The cookie only holds a random session id.
+- A session is created only by a login or exit attempt. Plain page views
+  (`GET /`, `GET /exit`) and throttled requests create nothing and set no
+  cookie, so a flood of page views cannot push real sessions out of memory.
+  Sessions expire after `limits.session_ttl_seconds` of inactivity (default 1 hour).
 
 ### Fake exit flow (stalling, not security)
 
@@ -92,6 +96,13 @@ The design blocks the usual shortcuts:
   threads cannot pile up.
 - **No machine-readable tells.** Every evaluated attempt returns HTTP 200 and
   the same page. Only the visible message differs.
+- **IPv6 is grouped by /64.** One host usually controls a whole /64, so rotating
+  addresses inside it does not reset the delay. IPv4-mapped IPv6 addresses
+  (`::ffff:a.b.c.d`) share the delay of the IPv4 address. The log still stores
+  the exact address.
+- **Oversize bodies are ordinary failures.** A request body over 16 KB gets the
+  normal "Wrong password." page, is delayed, counted and logged
+  (outcome `oversize`), not answered with a different error page.
 
 Worst-case guessing rates on layer 3 with the default settings:
 
@@ -127,7 +138,14 @@ in days. Use 60+ bits of entropy, for example 12+ random characters.
 | `delay.reset_after_seconds` | Quiet time after which an IP's failure count resets |
 | `limits.per_ip_concurrency` | Requests processed at once per IP |
 | `limits.global_concurrency` | Requests processed at once in total |
+| `limits.max_sessions` | Most sessions kept in memory (oldest evicted first). Default 10000 |
+| `limits.session_ttl_seconds` | Idle time after which a session is dropped. Default 3600 |
 | `logging.max_password_length`, `logging.max_user_agent_length` | Truncation limits for the log |
+| `logging.max_rows` | Newest rows kept in the log. Default 100000, `0` keeps everything |
+
+The config is validated at startup. Wrong types, non-finite or out-of-range
+numbers (for example `max_seconds` above 3600) stop the service with a clear
+`ConfigError` message.
 
 ## Logging
 
@@ -142,7 +160,7 @@ automatically if it is missing.
 | `action` | `login` or `exit` |
 | `layer` | Layer the attempt was made on |
 | `password` | Attempted password(s); exit answers are joined with ` \| ` |
-| `outcome` | `wrong`, `decoy_found`, `real_success`, `exit_denied`, `exit_granted`, `exit_unavailable`, `throttled` |
+| `outcome` | `wrong`, `decoy_found`, `real_success`, `exit_denied`, `exit_granted`, `exit_unavailable`, `throttled`, `oversize` |
 | `user_agent` | Client User-Agent |
 | `seconds_since_prev` | Seconds since the previous attempt from the same IP |
 
@@ -151,8 +169,17 @@ All input is treated as untrusted:
 - Every SQL query is parameterized.
 - Passwords and User-Agents are truncated and control characters are escaped
   before they are stored.
-- The real password is **never** logged. It is stored as `[REDACTED:REAL_PASSWORD]`.
-- Request bodies are capped at 16 KB.
+- The real password is **never** logged. Every occurrence of it inside a guess
+  is replaced by `[REDACTED:REAL_PASSWORD]`, even with extra characters around
+  it (a trailing space or newline, for example). A near-miss, such as one
+  mistyped character, cannot be recognised and is logged as typed, so treat the
+  log as sensitive.
+- Request bodies are capped at 16 KB. A larger body counts as a failed attempt
+  (outcome `oversize`).
+- Only the newest `logging.max_rows` rows are kept (default 100000), so a flood
+  of rejected requests cannot fill the disk. Pruning runs every 100 inserts.
+- A newly created database file gets mode `0600`. The permissions of an
+  existing file are left as they are.
 
 Quick look at the log:
 
@@ -165,6 +192,7 @@ sqlite3 maze.db "SELECT datetime(ts,'unixepoch'), ip, layer, outcome, password F
 ### Unit and integration tests
 
 ```bash
+pip install -r requirements-dev.txt   # Flask + pytest
 pytest -v
 ```
 
@@ -177,6 +205,13 @@ The tests cover:
 - refusing to start without a password
 - hardening: equal delay for right and wrong guesses, a per-IP delay that
   survives cookie loss and decoys, the quiet-period reset, and concurrency caps
+- config validation: every bad value gives a `ConfigError`, never a traceback
+- sessions: lazy creation, expiry, size cap, a GET flood not evicting real
+  sessions, consistent state when requests overlap
+- log: sanitizing, retention, file mode, connections closed, redaction of the
+  real password inside longer guesses
+- oversize bodies, response headers, IPv6 grouping, entry-point errors
+- an end-to-end run of the attacker simulator against a real HTTP server
 
 ### Attacker simulator
 
@@ -212,6 +247,9 @@ tests/               pytest suite
 tools/
   attacker_sim.py    Local attacker simulator
   wordlist.txt       Demo wordlist
+.github/workflows/   CI: runs the tests on Python 3.10 to 3.13
+requirements.txt     Runtime dependencies
+requirements-dev.txt Runtime + test dependencies
 .env.example         Template for local environment variables
 ```
 
@@ -223,6 +261,11 @@ tools/
   filter its outbound traffic.
 - The prototype uses Flask's development server. Sessions and throttle state
   live in memory and are lost on restart.
+- Every response carries `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Cache-Control: no-store` and a strict
+  `Content-Security-Policy` (no scripts, no framing).
+- At startup Maze logs a warning if `MAZE_REAL_PASSWORD` is shorter than 12
+  characters or has leading or trailing whitespace. It never prints the password.
 - The global concurrency cap means a flood can make the page unavailable to
   everyone. That is acceptable for a honeypot, not for a real login.
 - Treat the log as hostile data: it holds whatever attackers typed.

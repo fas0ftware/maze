@@ -22,10 +22,13 @@
   },
   "logging": {
     "max_password_length": 128,
-    "max_user_agent_length": 256
+    "max_user_agent_length": 256,
+    "max_rows": 100000
   },
   "limits": {
     "per_ip_concurrency": 2,
-    "global_concurrency": 32
+    "global_concurrency": 32,
+    "max_sessions": 10000,
+    "session_ttl_seconds": 3600
   }
 }

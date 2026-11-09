@@ -1,5 +1,6 @@
 import re
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -32,6 +33,31 @@ def app(tmp_path, monkeypatch, sleeps):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture
+def clock():
+    return FakeClock()
+
+
+@pytest.fixture
+def slow_app(tmp_path, monkeypatch, clock):
+    """App with delays ENABLED; sleeps are recorded, not performed."""
+    monkeypatch.setenv("MAZE_REAL_PASSWORD", TEST_REAL_PASSWORD)
+    monkeypatch.delenv("MAZE_DELAY_ENABLED", raising=False)
+    recorded = []
+    application = create_app({"DB_PATH": tmp_path / "slow.db", "DELAY_ENABLED": True,
+                              "SLEEP_FUNC": recorded.append, "CLOCK": clock})
+    application.recorded_sleeps = recorded
+    return application
 
 
 @pytest.fixture
@@ -73,5 +99,6 @@ def login(client, password, **kwargs):
 
 
 def count_tables(db_path):
-    with sqlite3.connect(db_path) as conn:
+    # `with sqlite3.connect(...)` only commits; closing() is what actually closes.
+    with closing(sqlite3.connect(db_path)) as conn:
         return conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()

@@ -53,6 +53,7 @@ class Client:
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
         )
+        self.last_layer = 1
 
     def request(self, path, data=None):
         body = urllib.parse.urlencode(data).encode() if data is not None else None
@@ -63,7 +64,11 @@ class Client:
                 html = resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as err:  # 429 when throttled
             html = err.read().decode("utf-8", "replace")
-        layer = int(LAYER_RE.search(html).group(1))
+        found = LAYER_RE.search(html)
+        if found is None:
+            # Not a Maze page (404, proxy error, ...): keep the last known layer.
+            return self.last_layer, "unexpected_page"
+        layer = self.last_layer = int(found.group(1))
         m = MESSAGE_RE.search(html)
         outcome = ""
         if m:

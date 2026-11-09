@@ -1,35 +1,9 @@
 """Hardening tests: timing-independent delay, per-IP state, concurrency limits."""
 
-import pytest
-
-from app import create_app
 from app.throttle import Throttle
 from conftest import LAYER1, LAYER2, TEST_REAL_PASSWORD, layer_of, login, outcome_of
 
-
-class FakeClock:
-    def __init__(self):
-        self.now = 1000.0
-
-    def __call__(self):
-        return self.now
-
-
-@pytest.fixture
-def clock():
-    return FakeClock()
-
-
-@pytest.fixture
-def slow_app(tmp_path, monkeypatch, clock):
-    """App with delays ENABLED; sleeps are recorded, not performed."""
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", TEST_REAL_PASSWORD)
-    monkeypatch.delenv("MAZE_DELAY_ENABLED", raising=False)
-    recorded = []
-    app = create_app({"DB_PATH": tmp_path / "slow.db", "DELAY_ENABLED": True,
-                      "SLEEP_FUNC": recorded.append, "CLOCK": clock})
-    app.recorded_sleeps = recorded
-    return app
+# The `clock` and `slow_app` fixtures live in conftest.py.
 
 
 def test_delay_sequence_for_wrong_guesses(slow_app):
