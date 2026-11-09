@@ -17,9 +17,10 @@
   </style>
 </head>
 <body>
-  <main data-layer="{{ layer }}" data-outcome="{{ outcome }}">
+  <main>
     {% if message %}<div class="msg">{{ message }}</div>{% endif %}
     {% block content %}{% endblock %}
+    <p class="meta">Stage {{ layer }} of 3</p>
   </main>
 </body>
 </html>
