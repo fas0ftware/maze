@@ -1,6 +1,48 @@
+# --- Secrets ---------------------------------------------------------------
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Runtime data (attack logs hold attacker input) -----------------------
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+
+# --- Python ---------------------------------------------------------------
 __pycache__/
+*.py[cod]
 venv/
 .venv/
+env/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# --- C (planned rewrite) --------------------------------------------------
+*.o
+*.a
+*.so
+*.out
+*.d
+/maze
+compile_commands.json
+.cache/
+
+# --- Editors / OS ---------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
