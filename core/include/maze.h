@@ -80,11 +80,13 @@ int maze_hash_find(const uint8_t candidate[MAZE_HASH_BYTES],
  * layers, each with its own list of decoy password hashes. The last layer is
  * the final layer: it accepts only the real password.
  *
- * All decoys share one KDF (one salt), so a guess costs one Argon2id hash on
- * a decoy layer. The real password has its own KDF. On the final layer both
- * hashes are always computed, and the guess is compared in constant time with
- * the real hash and with every decoy of every layer, so response time does
- * not reveal whether the guess was the real password, a decoy, or neither.
+ * All decoys share one KDF (one salt); the real password has its own KDF.
+ * Every guess, on every layer, is hashed with both, so a guess always costs
+ * exactly two Argon2id hashes. On the final layer the guess is compared in
+ * constant time with the real hash and with every decoy of every layer, so
+ * response time does not reveal whether the guess was the real password, a
+ * decoy, or neither. On decoy layers the real hash is only used to tell the
+ * caller that the real password must be redacted from the log.
  *
  * The engine is immutable once built and may be shared between threads. A
  * session is owned by the caller, who must serialise calls on one session.
@@ -97,6 +99,9 @@ enum maze_outcome {
     MAZE_WRONG = 0,
     MAZE_DECOY_FOUND = 1,
     MAZE_REAL_SUCCESS = 2,
+    MAZE_EXIT_GRANTED = 3,
+    MAZE_EXIT_DENIED = 4,
+    MAZE_EXIT_UNAVAILABLE = 5,
 };
 
 typedef struct maze_engine maze_engine; /* opaque */
@@ -117,6 +122,9 @@ typedef struct {
      * decoy layer whose list the guess matched (0 if none). On a decoy layer,
      * the matched layer itself when the outcome is MAZE_DECOY_FOUND. */
     uint32_t decoy_layer;
+    /* For log redaction only: bit 0 (login) or bit i-1 (exit answer for
+     * layer i) is set when that input was exactly the real password. */
+    uint32_t real_mask;
 } maze_result;
 
 /* New engine with layer_count layers (1..MAZE_MAX_LAYERS) and no decoys.
@@ -147,6 +155,21 @@ void maze_session_init(maze_session *session);
  * session, never from the client. */
 int maze_login(const maze_engine *engine, maze_session *session,
                const char *password, size_t len, maze_result *result);
+
+/* Fake exit (a stalling loop, not access control). The client must repeat
+ * the decoy that cleared each layer below the current one: answers[i] and
+ * lens[i] are the answer for layer i+1, and n must equal layer - 1. If every
+ * answer matches, the session restarts on layer 1 (MAZE_EXIT_GRANTED); if not,
+ * nothing changes (MAZE_EXIT_DENIED). On layer 1 there is nothing to confirm
+ * (MAZE_EXIT_UNAVAILABLE). All answers are always hashed and compared. */
+int maze_exit(const maze_engine *engine, maze_session *session,
+              const char *const *answers, const size_t *lens, size_t n,
+              maze_result *result);
+
+/* sizeof of the public structs, so bindings (ctypes) can check their layout. */
+size_t maze_sizeof_kdf(void);
+size_t maze_sizeof_session(void);
+size_t maze_sizeof_result(void);
 
 #ifdef __cplusplus
 }

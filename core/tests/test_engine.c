@@ -225,6 +225,92 @@ static void test_engine_rejects_bad_setup(void)
     maze_engine_free(NULL);
 }
 
+static maze_result exit_with(const maze_engine *engine, maze_session *s,
+                             const char *a1, const char *a2)
+{
+    const char *answers[] = {a1, a2};
+    size_t lens[] = {strlen(a1), strlen(a2)};
+    maze_result r;
+    CHECK(maze_exit(engine, s, answers, lens, s->layer - 1, &r) == MAZE_OK);
+    return r;
+}
+
+static void test_exit_flow(void)
+{
+    maze_engine *engine = make_engine(3);
+    maze_session s;
+    maze_session_init(&s);
+    maze_result r;
+
+    CHECK(maze_exit(engine, &s, NULL, NULL, 0, &r) == MAZE_OK);
+    CHECK(r.outcome == MAZE_EXIT_UNAVAILABLE && s.layer == 1);
+
+    guess(engine, &s, "letmein");
+    /* Another decoy of the same layer is not the one this session used. */
+    CHECK(exit_with(engine, &s, "admin123", "").outcome == MAZE_EXIT_DENIED);
+    CHECK(s.layer == 2);
+    CHECK(exit_with(engine, &s, "letmein", "").outcome == MAZE_EXIT_GRANTED);
+    CHECK(s.layer == 1 && s.cleared_mask == 0);
+
+    guess(engine, &s, "admin123");
+    guess(engine, &s, "changeme_now");
+    CHECK(exit_with(engine, &s, "admin123", "root!2024").outcome == MAZE_EXIT_DENIED);
+    CHECK(exit_with(engine, &s, "changeme_now", "admin123").outcome == MAZE_EXIT_DENIED);
+    CHECK(s.layer == 3);
+    r = exit_with(engine, &s, "admin123", "changeme_now");
+    CHECK(r.outcome == MAZE_EXIT_GRANTED && r.layer_before == 3 && s.layer == 1);
+
+    /* The answer count must match the layer. */
+    guess(engine, &s, "admin123");
+    const char *one[] = {"admin123"};
+    size_t one_len[] = {8};
+    CHECK(maze_exit(engine, &s, one, one_len, 0, &r) == MAZE_ERR_ARG);
+    CHECK(maze_exit(engine, &s, one, one_len, 2, &r) == MAZE_ERR_ARG);
+    CHECK(maze_exit(engine, &s, NULL, NULL, 1, &r) == MAZE_ERR_ARG);
+    maze_engine_free(engine);
+}
+
+static void test_exit_needs_cleared_layers(void)
+{
+    /* With a custom route a session can reach layer 3 without clearing
+     * layer 2; there is then nothing that could confirm layer 2. */
+    maze_engine *engine = make_engine(3);
+    CHECK(maze_engine_set_route(engine, 1, 3, 1) == MAZE_OK);
+    maze_session s;
+    maze_session_init(&s);
+    guess(engine, &s, "letmein");
+    CHECK(s.layer == 3);
+    CHECK(exit_with(engine, &s, "letmein", "").outcome == MAZE_EXIT_DENIED);
+    CHECK(exit_with(engine, &s, "letmein", "\0").outcome == MAZE_EXIT_DENIED);
+    maze_engine_free(engine);
+}
+
+static void test_real_password_is_flagged_for_redaction(void)
+{
+    maze_engine *engine = make_engine(3);
+    maze_session s;
+    maze_session_init(&s);
+
+    maze_result r = guess(engine, &s, REAL); /* layer 1: wrong, but flagged */
+    CHECK(r.outcome == MAZE_WRONG && r.real_mask == 1);
+    CHECK(guess(engine, &s, "nope").real_mask == 0);
+    guess(engine, &s, "letmein");
+    guess(engine, &s, "root!2024");
+    r = exit_with(engine, &s, REAL, "root!2024");
+    CHECK(r.outcome == MAZE_EXIT_DENIED && r.real_mask == 1);
+    r = exit_with(engine, &s, "letmein", REAL);
+    CHECK(r.real_mask == 2);
+    CHECK(guess(engine, &s, REAL).real_mask == 1);
+    maze_engine_free(engine);
+}
+
+static void test_abi_sizes(void)
+{
+    CHECK(maze_sizeof_kdf() == sizeof(maze_kdf));
+    CHECK(maze_sizeof_session() == sizeof(maze_session));
+    CHECK(maze_sizeof_result() == sizeof(maze_result));
+}
+
 void run_engine_tests(void)
 {
     RUN(test_full_flow);
@@ -234,4 +320,8 @@ void run_engine_tests(void)
     RUN(test_configurable_layer_count);
     RUN(test_routing_rules);
     RUN(test_engine_rejects_bad_setup);
+    RUN(test_exit_flow);
+    RUN(test_exit_needs_cleared_layers);
+    RUN(test_real_password_is_flagged_for_redaction);
+    RUN(test_abi_sizes);
 }

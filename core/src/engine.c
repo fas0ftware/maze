@@ -99,22 +99,30 @@ static const uint8_t (*decoy_list(const maze_engine *engine,
     return (const uint8_t (*)[MAZE_HASH_BYTES])engine->layers[layer].hashes;
 }
 
-/* Final layer. Every call does the same work: two Argon2id hashes, one
- * comparison with the real hash and a full scan of every decoy layer. The
- * matched decoy layer is selected with masks, not branches. */
-static int final_layer(const maze_engine *engine, const char *password,
-                       size_t len, int *is_real, uint32_t *decoy_layer)
+/* Hash a guess with both KDFs. Every login and every exit answer goes
+ * through this, so all of them cost the same. */
+static int hash_both(const maze_engine *engine, const char *password, size_t len,
+                     uint8_t real_guess[MAZE_HASH_BYTES],
+                     uint8_t decoy_guess[MAZE_HASH_BYTES], uint32_t *is_real)
 {
-    uint8_t real_guess[MAZE_HASH_BYTES], decoy_guess[MAZE_HASH_BYTES];
     int rc = maze_kdf_hash(&engine->real_kdf, password, len, real_guess);
     if (rc == MAZE_OK)
         rc = maze_kdf_hash(&engine->decoy_kdf, password, len, decoy_guess);
     if (rc != MAZE_OK) {
-        sodium_memzero(real_guess, sizeof real_guess);
-        sodium_memzero(decoy_guess, sizeof decoy_guess);
+        sodium_memzero(real_guess, MAZE_HASH_BYTES);
+        sodium_memzero(decoy_guess, MAZE_HASH_BYTES);
         return rc;
     }
+    *is_real = (uint32_t)maze_hash_equal(real_guess, engine->real_hash);
+    sodium_memzero(real_guess, MAZE_HASH_BYTES);
+    return MAZE_OK;
+}
 
+/* Final layer: compare with every decoy of every layer. The matched decoy
+ * layer is selected with masks, not branches. */
+static uint32_t match_any_decoy_layer(const maze_engine *engine,
+                                      const uint8_t decoy_guess[MAZE_HASH_BYTES])
+{
     uint32_t matched = 0;
     for (uint32_t layer = 1; layer < engine->layer_count; layer++) {
         uint32_t hit = (uint32_t)maze_hash_find(
@@ -123,12 +131,7 @@ static int final_layer(const maze_engine *engine, const char *password,
         uint32_t mask = (uint32_t)0 - hit;
         matched = (matched & ~mask) | (layer & mask);
     }
-    *is_real = maze_hash_equal(real_guess, engine->real_hash);
-    *decoy_layer = matched;
-
-    sodium_memzero(real_guess, sizeof real_guess);
-    sodium_memzero(decoy_guess, sizeof decoy_guess);
-    return MAZE_OK;
+    return matched;
 }
 
 int maze_login(const maze_engine *engine, maze_session *session,
@@ -140,34 +143,29 @@ int maze_login(const maze_engine *engine, maze_session *session,
 
     const uint32_t layer = session->layer;
     const layer_def *def = &engine->layers[layer];
+    uint8_t real_guess[MAZE_HASH_BYTES], guess[MAZE_HASH_BYTES];
+    uint32_t is_real = 0;
+    int rc = hash_both(engine, password, len, real_guess, guess, &is_real);
+    if (rc != MAZE_OK)
+        return rc;
+
     memset(result, 0, sizeof *result);
     result->layer_before = layer;
+    result->real_mask = is_real;
 
     if (layer == engine->layer_count) {
-        int is_real = 0;
-        uint32_t decoy_layer = 0;
-        int rc = final_layer(engine, password, len, &is_real, &decoy_layer);
-        if (rc != MAZE_OK)
-            return rc;
         /* A decoy on the final layer is just a wrong guess for the client. */
-        result->decoy_layer = decoy_layer;
+        result->decoy_layer = match_any_decoy_layer(engine, guess);
         if (is_real) {
             result->outcome = MAZE_REAL_SUCCESS;
         } else {
             result->outcome = MAZE_WRONG;
             session->layer = def->on_wrong;
         }
-        result->layer_after = session->layer;
-        return MAZE_OK;
-    }
-
-    /* Decoy layer: only this layer's list counts, so a decoy of another
-     * layer (or the real password) cannot be used to skip ahead. */
-    uint8_t guess[MAZE_HASH_BYTES];
-    int rc = maze_kdf_hash(&engine->decoy_kdf, password, len, guess);
-    if (rc != MAZE_OK)
-        return rc;
-    if (maze_hash_find(guess, decoy_list(engine, layer), def->count, NULL)) {
+    } else if (maze_hash_find(guess, decoy_list(engine, layer), def->count,
+                              NULL)) {
+        /* Only this layer's list counts, so a decoy of another layer (or the
+         * real password) cannot be used to skip ahead. */
         result->outcome = MAZE_DECOY_FOUND;
         result->decoy_layer = layer;
         memcpy(session->cleared[layer], guess, MAZE_HASH_BYTES);
@@ -181,3 +179,50 @@ int maze_login(const maze_engine *engine, maze_session *session,
     result->layer_after = session->layer;
     return MAZE_OK;
 }
+
+int maze_exit(const maze_engine *engine, maze_session *session,
+              const char *const *answers, const size_t *lens, size_t n,
+              maze_result *result)
+{
+    if (engine == NULL || session == NULL || result == NULL ||
+        !valid_layer(engine, session->layer) || n != session->layer - 1 ||
+        (n > 0 && (answers == NULL || lens == NULL)))
+        return MAZE_ERR_ARG;
+
+    const uint32_t layer = session->layer;
+    memset(result, 0, sizeof *result);
+    result->layer_before = layer;
+    result->layer_after = layer;
+    if (layer == 1) {
+        result->outcome = MAZE_EXIT_UNAVAILABLE;
+        return MAZE_OK;
+    }
+
+    uint32_t all_match = 1;
+    for (uint32_t i = 1; i < layer; i++) {
+        uint8_t real_guess[MAZE_HASH_BYTES], guess[MAZE_HASH_BYTES];
+        uint32_t is_real = 0;
+        int rc = hash_both(engine, answers[i - 1], lens[i - 1], real_guess,
+                           guess, &is_real);
+        if (rc != MAZE_OK)
+            return rc;
+        uint32_t cleared = (session->cleared_mask >> i) & 1u;
+        all_match &= cleared &
+                     (uint32_t)maze_hash_equal(guess, session->cleared[i]);
+        result->real_mask |= is_real << (i - 1);
+        sodium_memzero(guess, sizeof guess);
+    }
+
+    if (all_match) {
+        maze_session_init(session);
+        result->outcome = MAZE_EXIT_GRANTED;
+        result->layer_after = 1;
+    } else {
+        result->outcome = MAZE_EXIT_DENIED;
+    }
+    return MAZE_OK;
+}
+
+size_t maze_sizeof_kdf(void) { return sizeof(maze_kdf); }
+size_t maze_sizeof_session(void) { return sizeof(maze_session); }
+size_t maze_sizeof_result(void) { return sizeof(maze_result); }
