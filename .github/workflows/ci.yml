@@ -26,3 +26,14 @@ jobs:
             requirements-dev.txt
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q -W error::ResourceWarning
+
+  c-core:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C core test CC=${{ matrix.cc }}
+      - run: make -C core asan CC=${{ matrix.cc }}
