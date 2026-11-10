@@ -6,7 +6,6 @@ from app import __main__ as entry
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", "a-long-random-password-9X")
     monkeypatch.setenv("MAZE_DB_PATH", str(tmp_path / "main.db"))
     monkeypatch.delenv("MAZE_HOST", raising=False)
     monkeypatch.delenv("MAZE_PORT", raising=False)
@@ -20,10 +19,20 @@ def served(monkeypatch):
     return calls
 
 
-def test_missing_password_returns_1(env, monkeypatch, capsys):
-    monkeypatch.delenv("MAZE_REAL_PASSWORD")
+def test_missing_password_returns_1(env, monkeypatch, capsys, served):
+    monkeypatch.delenv("MAZE_REAL_PASSWORD_HASH")
     assert entry.main() == 1
-    assert "MAZE_REAL_PASSWORD" in capsys.readouterr().err
+    assert "MAZE_REAL_PASSWORD_HASH" in capsys.readouterr().err
+    assert served == []
+
+
+def test_missing_library_returns_1(env, monkeypatch, capsys, served, tmp_path):
+    from app import core
+    monkeypatch.setattr(core, "_lib", None)
+    monkeypatch.setenv("MAZE_LIB", str(tmp_path / "nope.so"))
+    assert entry.main() == 1
+    assert "make -C core" in capsys.readouterr().err
+    assert served == []
 
 
 @pytest.mark.parametrize("port", ["abc", "", "0", "-1", "70000", "5000.5"])

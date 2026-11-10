@@ -1,19 +1,18 @@
-"""Core maze logic: server-side session state, layer transitions, fake exit.
+"""Maze logic on top of the C engine: server-side sessions, messages, logging text.
 
-Delays and rate limits live in throttle.py.
-
-Kept free of Flask so it can be tested and reasoned about on its own.
+The decisions (layers, routes, the constant-time final layer, the exit check)
+are made by libmaze (core/, bound in core.py). This module keeps the session
+store, turns engine results into visible messages, and decides what is safe
+to write to the log.
 """
 
-import hashlib
-import hmac
 import secrets
 import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
-FINAL_LAYER = 3
+from . import core
 
 # Outcome codes (also stored in the log)
 DECOY_FOUND = "decoy_found"
@@ -33,14 +32,27 @@ EXIT_DENIED_MESSAGE = "Exit denied. Previous layer passwords do not match."
 REAL_PASSWORD_REDACTED = "[REDACTED:REAL_PASSWORD]"
 # What is logged when the body was too large to read at all.
 OVERSIZE_LOG_TEXT = "[oversize request body]"
+# What is logged for a throttled request. It is rejected before any hashing,
+# so the guess cannot be checked against the real password; it is not stored.
+THROTTLED_LOG_TEXT = "[not stored: throttled]"
 
 
 @dataclass
 class SessionState:
-    layer: int = 1
-    # Decoy password the attacker used to clear each layer (layer -> password).
-    cleared_with: dict = field(default_factory=dict)
+    # Engine state: current layer and the HASHES of the decoys that cleared
+    # each layer (for the exit flow). No plain-text guess is kept.
+    core: core.Session = field(default_factory=core.new_session)
     last_seen: float = field(default_factory=time.time)
+    # Serialises requests of one session; different sessions run in parallel.
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    @property
+    def layer(self) -> int:
+        return self.core.layer
+
+    @property
+    def cleared_layers(self) -> list:
+        return [n for n in range(1, core.MAX_LAYERS + 1) if self.core.cleared_mask >> n & 1]
 
 
 class SessionStore:
@@ -94,15 +106,6 @@ class SessionStore:
             return state
 
 
-def _digest(text: str) -> bytes:
-    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
-
-
-def _equals(a: str, b: str) -> bool:
-    """Constant-time equality that does not leak the length either (compares digests)."""
-    return hmac.compare_digest(_digest(a), _digest(b))
-
-
 @dataclass
 class Result:
     outcome: str
@@ -111,78 +114,55 @@ class Result:
     layer_after: int
     log_password: str  # what is safe to write to the log
     failed: bool       # counts toward the per-IP back-off
+    # Log only, never shown: on the final layer, the decoy layer the guess matched.
+    decoy_layer: int = 0
+
+
+_ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth",
+             "Ninth", "Tenth", "Eleventh", "Twelfth", "Thirteenth", "Fourteenth", "Fifteenth"]
+
+
+def _redacted(text: str, real_mask: int, bit: int) -> str:
+    return REAL_PASSWORD_REDACTED if real_mask >> bit & 1 else text
 
 
 class Maze:
-    def __init__(self, decoys: dict, real_password: str):
-        self.decoys = decoys
-        self._real_password = real_password
-        # Evaluation is a few microseconds; the long waits happen outside (throttle).
-        # The lock keeps layer/cleared_with consistent when one session sends
-        # several requests at once.
-        self._lock = threading.Lock()
-
-    def _is_real(self, password: str) -> bool:
-        return _equals(password, self._real_password)
-
-    def redact(self, text: str) -> str:
-        """Return a version of the text that is safe to write to the log.
-
-        Every occurrence of the real password is replaced, not only an exact
-        match, so a stray space, a pasted newline or extra characters around the
-        real password do not put it in the log. (This only decides what is
-        logged; the access decision uses the constant-time _is_real.)
-
-        Limit: a near-miss, such as one mistyped character, cannot be recognised
-        and is logged as typed. Treat the log as sensitive.
-        """
-        real = self._real_password
-        if real and real in text:
-            return text.replace(real, REAL_PASSWORD_REDACTED)
-        return text
-
-    _safe_for_log = redact
+    def __init__(self, engine: core.Engine):
+        self.engine = engine
+        self.layer_count = engine.layer_count
 
     def login(self, state: SessionState, password: str) -> Result:
-        with self._lock:
-            before = state.layer
-            log_pw = self._safe_for_log(password)
-
-            if before < FINAL_LAYER:
-                if password in self.decoys[before]:
-                    state.cleared_with[before] = password
-                    state.layer = before + 1
-                    ordinal = "First" if before == 1 else "Second"
-                    return Result(DECOY_FOUND,
-                                  f"{ordinal} password found. Proceed to layer {state.layer}.",
-                                  before, state.layer, log_pw, False)
-                return Result(WRONG, WRONG_MESSAGE, before, before, log_pw, True)
-
-            # Final layer: the only place the real password is checked.
-            if self._is_real(password):
-                return Result(REAL_SUCCESS, "Access granted.", before, before, log_pw, False)
-            return Result(WRONG, WRONG_MESSAGE, before, before, log_pw, True)
+        with state.lock:
+            r = self.engine.login(state.core, password)
+        # The real password is redacted when the guess was exactly it, on any
+        # layer. Only its hash is known, so a near-miss (an extra space, one
+        # wrong character) cannot be recognised and is logged as typed.
+        log_pw = _redacted(password, r.real_mask, 0)
+        before, after = r.layer_before, r.layer_after
+        if r.outcome == core.DECOY_FOUND:
+            ordinal = _ORDINALS[before - 1]
+            return Result(DECOY_FOUND, f"{ordinal} password found. Proceed to layer {after}.",
+                          before, after, log_pw, False, r.decoy_layer)
+        if r.outcome == core.REAL_SUCCESS:
+            return Result(REAL_SUCCESS, "Access granted.", before, after, log_pw, False)
+        return Result(WRONG, WRONG_MESSAGE, before, after, log_pw, True, r.decoy_layer)
 
     def exit(self, state: SessionState, answers: dict) -> Result:
         """Fake exit: asks for the passwords of every previously cleared layer.
 
         This is NOT a security control; it is a stalling loop. A correct answer
-        sends the session back to layer 1.
+        sends the session back to layer 1. answers maps layer -> answer.
         """
-        with self._lock:
-            before = state.layer
-            required = list(range(1, before))
-            log_pw = " | ".join(self._safe_for_log(answers.get(i, "")) for i in required)
-
-            if not required:
-                return Result(EXIT_UNAVAILABLE, "No exit from here. Find the first password.",
-                              before, before, log_pw, False)
-
-            ok = all(_equals(answers.get(i, ""), state.cleared_with.get(i, "\x00"))
-                     for i in required)
-            if ok:
-                state.layer = 1
-                state.cleared_with.clear()
-                return Result(EXIT_GRANTED, "Exit verified. Returning to the entrance.",
-                              before, 1, log_pw, False)
-            return Result(EXIT_DENIED, EXIT_DENIED_MESSAGE, before, before, log_pw, True)
+        with state.lock:
+            required = range(1, state.layer)
+            given = [answers.get(i, "") for i in required]
+            r = self.engine.exit(state.core, given)
+        log_pw = " | ".join(_redacted(a, r.real_mask, i) for i, a in enumerate(given))
+        before = r.layer_before
+        if r.outcome == core.EXIT_UNAVAILABLE:
+            return Result(EXIT_UNAVAILABLE, "No exit from here. Find the first password.",
+                          before, before, log_pw, False)
+        if r.outcome == core.EXIT_GRANTED:
+            return Result(EXIT_GRANTED, "Exit verified. Returning to the entrance.",
+                          before, 1, log_pw, False)
+        return Result(EXIT_DENIED, EXIT_DENIED_MESSAGE, before, before, log_pw, True)

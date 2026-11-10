@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 from contextlib import closing
@@ -5,10 +6,52 @@ from contextlib import closing
 import pytest
 
 from app import create_app
+from app.config import DEFAULT_LAYERS_PATH, load_layer_config
+from app.hashtool import hash_layer_config, real_password_hash
 
 TEST_REAL_PASSWORD = "test-only-real-pw"
 LAYER1 = "admin123"
 LAYER2 = "root!2024"
+# The cheapest Argon2id settings: the tests check behaviour, not strength.
+CHEAP = {"opslimit": 1, "memlimit_kib": 8}
+
+PLAIN_LAYERS = {"1": {"decoys": [LAYER1, "Winter2024!", "letmein"]},
+                "2": {"decoys": [LAYER2, "SuperSecret99", "changeme_now"]}}
+
+
+def plain_config(**overrides) -> dict:
+    """The shipped config's tunables with plain-text test decoys."""
+    shipped = json.loads(DEFAULT_LAYERS_PATH.read_text())
+    base = {k: v for k, v in shipped.items() if k not in ("_comment", "decoy_kdf", "layers")}
+    return {**base, "layer_count": 3, "layers": PLAIN_LAYERS, **overrides}
+
+
+def write_hashed_config(path, **overrides):
+    """Write a hashed (cheap) layer config built from plain_config(**overrides)."""
+    path.write_text(json.dumps(hash_layer_config(plain_config(**overrides), **CHEAP)))
+    return path
+
+
+def real_hash_for(layers_path, password=TEST_REAL_PASSWORD) -> str:
+    return real_password_hash(password, load_layer_config(layers_path), **CHEAP)
+
+
+@pytest.fixture(scope="session")
+def test_layers(tmp_path_factory):
+    return write_hashed_config(tmp_path_factory.mktemp("cfg") / "layers.json")
+
+
+@pytest.fixture(scope="session")
+def test_real_hash(test_layers):
+    return real_hash_for(test_layers)
+
+
+@pytest.fixture(autouse=True)
+def maze_env(monkeypatch, test_layers, test_real_hash):
+    """Every test runs on the cheap test config and the test real-password hash."""
+    monkeypatch.delenv("MAZE_REAL_PASSWORD", raising=False)
+    monkeypatch.setenv("MAZE_REAL_PASSWORD_HASH", test_real_hash)
+    monkeypatch.setenv("MAZE_LAYERS_PATH", str(test_layers))
 
 
 @pytest.fixture
@@ -19,7 +62,6 @@ def sleeps():
 
 @pytest.fixture
 def app(tmp_path, monkeypatch, sleeps):
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", TEST_REAL_PASSWORD)
     monkeypatch.delenv("MAZE_DELAY_ENABLED", raising=False)
     application = create_app({
         "DB_PATH": tmp_path / "test.db",
@@ -51,7 +93,6 @@ def clock():
 @pytest.fixture
 def slow_app(tmp_path, monkeypatch, clock):
     """App with delays ENABLED; sleeps are recorded, not performed."""
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", TEST_REAL_PASSWORD)
     monkeypatch.delenv("MAZE_DELAY_ENABLED", raising=False)
     recorded = []
     application = create_app({"DB_PATH": tmp_path / "slow.db", "DELAY_ENABLED": True,

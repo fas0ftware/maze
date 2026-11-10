@@ -24,6 +24,8 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+      - run: sudo apt-get update && sudo apt-get install -y libsodium-dev pkg-config
+      - run: make -C core
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q -W error::ResourceWarning
 

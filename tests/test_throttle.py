@@ -88,7 +88,7 @@ def test_per_ip_concurrency_limit(app, db_rows):
     assert layer_of(login(c, LAYER1)) == 2       # works again once a slot frees
 
 
-def test_throttled_real_password_is_redacted(app, db_rows):
+def test_throttled_real_password_is_not_stored(app, db_rows):
     t = app.extensions["maze"]["throttle"]
     t.try_enter("127.0.0.1"); t.try_enter("127.0.0.1")
     login(app.test_client(), TEST_REAL_PASSWORD)

@@ -4,6 +4,7 @@
 !.env.example
 *.pem
 *.key
+config/*.plain.json
 
 # --- Runtime data (attack logs hold attacker input) -----------------------
 *.db

@@ -6,40 +6,47 @@ import pytest
 
 from app import create_app
 from app.config import DEFAULT_LAYERS_PATH
-from app.maze import OVERSIZE_LOG_TEXT, REAL_PASSWORD_REDACTED
+from app.maze import OVERSIZE_LOG_TEXT, REAL_PASSWORD_REDACTED, THROTTLED_LOG_TEXT
 from app.throttle import ip_key
-from conftest import LAYER1, TEST_REAL_PASSWORD, layer_of, login, outcome_of
+from conftest import LAYER1, LAYER2, TEST_REAL_PASSWORD, write_hashed_config, layer_of, login, outcome_of
 
 
 # --- the real password never reaches the log --------------------------------
 
+def test_real_password_is_redacted_on_every_layer(client, db_rows):
+    for decoy in (None, LAYER1, LAYER2):
+        if decoy:
+            login(client, decoy)
+        login(client, TEST_REAL_PASSWORD)
+        assert db_rows()[-1]["password"] == REAL_PASSWORD_REDACTED
+
+
 @pytest.mark.parametrize("typed", [
     TEST_REAL_PASSWORD + " ",
-    " " + TEST_REAL_PASSWORD,
-    TEST_REAL_PASSWORD + "\n",
     "x" + TEST_REAL_PASSWORD + "y",
-    TEST_REAL_PASSWORD * 2,
-], ids=["trailing space", "leading space", "newline", "wrapped", "repeated"])
-def test_real_password_inside_a_longer_guess_is_redacted(client, db_rows, typed):
+], ids=["trailing space", "wrapped"])
+def test_near_miss_of_real_password_is_logged_as_typed(client, db_rows, typed):
+    """Documented limit: only the hash of the real password is known, so only an
+    exact match can be recognised and redacted. Treat the log as sensitive."""
     login(client, typed)
-    stored = db_rows()[-1]["password"]
-    assert TEST_REAL_PASSWORD not in stored
-    assert REAL_PASSWORD_REDACTED in stored
+    assert db_rows()[-1]["password"] == typed
 
 
-def test_real_password_inside_an_exit_answer_is_redacted(client, db_rows):
+def test_real_password_as_an_exit_answer_is_redacted(client, db_rows):
     login(client, LAYER1)
-    client.post("/exit", data={"layer1": TEST_REAL_PASSWORD + "!"})
+    login(client, LAYER2)
+    client.post("/exit", data={"layer1": TEST_REAL_PASSWORD, "layer2": "x"})
     row = db_rows()[-1]
-    assert row["action"] == "exit" and TEST_REAL_PASSWORD not in row["password"]
+    assert row["action"] == "exit"
+    assert row["password"] == f"{REAL_PASSWORD_REDACTED} | x"
 
 
-def test_real_password_inside_a_throttled_guess_is_redacted(app, db_rows):
+def test_throttled_guess_is_not_stored(app, db_rows):
     t = app.extensions["maze"]["throttle"]
     t.try_enter("127.0.0.1")
     t.try_enter("127.0.0.1")
     login(app.test_client(), "x" + TEST_REAL_PASSWORD)
-    assert TEST_REAL_PASSWORD not in db_rows()[-1]["password"]
+    assert db_rows()[-1]["password"] == THROTTLED_LOG_TEXT
 
 
 def test_ordinary_guesses_are_logged_unchanged(client, db_rows):
@@ -140,11 +147,9 @@ def test_ipv4_mapped_ipv6_shares_the_ipv4_delay(slow_app):
 # --- retention through the app config ---------------------------------------------
 
 def test_log_retention_comes_from_the_config(tmp_path, monkeypatch):
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", TEST_REAL_PASSWORD)
     cfg = json.loads(DEFAULT_LAYERS_PATH.read_text())
-    cfg["logging"]["max_rows"] = 3
-    path = tmp_path / "layers.json"
-    path.write_text(json.dumps(cfg))
+    path = write_hashed_config(tmp_path / "layers.json",
+                               logging={**cfg["logging"], "max_rows": 3})
     app = create_app({"LAYERS_PATH": path, "DB_PATH": tmp_path / "r.db", "DELAY_ENABLED": False})
     c = app.test_client()
     for i in range(10):

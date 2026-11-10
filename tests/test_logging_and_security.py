@@ -98,13 +98,7 @@ def test_delay_disabled_in_tests(client, sleeps):
 # --- startup safety ------------------------------------------------------
 
 def test_refuses_to_start_without_real_password(tmp_path, monkeypatch):
-    monkeypatch.delenv("MAZE_REAL_PASSWORD", raising=False)
-    with pytest.raises(ConfigError):
-        create_app({"DB_PATH": tmp_path / "x.db"})
-
-
-def test_refuses_if_real_password_is_a_decoy(tmp_path, monkeypatch):
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", LAYER1)
+    monkeypatch.delenv("MAZE_REAL_PASSWORD_HASH", raising=False)
     with pytest.raises(ConfigError):
         create_app({"DB_PATH": tmp_path / "x.db"})
 

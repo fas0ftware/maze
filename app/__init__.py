@@ -6,20 +6,19 @@ import time
 
 from flask import Flask, render_template, request, session
 
+from . import core
 from .config import (
     DEFAULT_DB_PATH,
     ConfigError,
-    ensure_real_password_not_in_decoys,
     load_layer_config,
-    read_real_password,
-    real_password_warnings,
+    read_real_password_hash,
 )
 from .maze import (
     EXIT_DENIED_MESSAGE,
-    FINAL_LAYER,
     OVERSIZE,
     OVERSIZE_LOG_TEXT,
     REAL_SUCCESS,
+    THROTTLED_LOG_TEXT,
     WRONG_MESSAGE,
     Maze,
     Result,
@@ -50,16 +49,14 @@ SECURITY_HEADERS = {
 
 
 def create_app(overrides=None) -> Flask:
-    """Build the Flask app. Raises ConfigError if MAZE_REAL_PASSWORD is not set.
+    """Build the Flask app. Raises ConfigError if the config, MAZE_REAL_PASSWORD_HASH
+    or libmaze is missing or invalid.
 
     overrides (all optional): LAYERS_PATH, DB_PATH, DELAY_ENABLED, SLEEP_FUNC, CLOCK.
     """
     overrides = overrides or {}
-    real_password = read_real_password()
-    for warning in real_password_warnings(real_password):
-        LOG.warning(warning)
+    real_kdf, real_hash = read_real_password_hash()
     cfg = load_layer_config(overrides.get("LAYERS_PATH"))
-    ensure_real_password_not_in_decoys(real_password, cfg["decoys"])
     if "DELAY_ENABLED" in overrides:
         cfg["delay_enabled"] = bool(overrides["DELAY_ENABLED"])
 
@@ -72,7 +69,10 @@ def create_app(overrides=None) -> Flask:
         MAX_CONTENT_LENGTH=16 * 1024,
     )
 
-    maze = Maze(cfg["decoys"], real_password)
+    engine = core.Engine(cfg["layer_count"], cfg["decoy_kdf"], real_kdf, real_hash,
+                         cfg["decoys"], cfg["routes"])
+    maze = Maze(engine)
+    layer_count = cfg["layer_count"]
     store = SessionStore(max_sessions=cfg["max_sessions"], ttl=cfg["session_ttl"])
     throttle = Throttle(
         base=cfg["delay_base"],
@@ -87,7 +87,7 @@ def create_app(overrides=None) -> Flask:
     sleep = overrides.get("SLEEP_FUNC", time.sleep)
 
     app.extensions["maze"] = {"log": attempt_log, "store": store, "config": cfg,
-                              "throttle": throttle}
+                              "throttle": throttle, "maze": maze}
 
     @app.after_request
     def add_security_headers(response):
@@ -128,7 +128,11 @@ def create_app(overrides=None) -> Flask:
             user_agent=sanitize(request.headers.get("User-Agent", ""), cfg["max_user_agent_length"]),
         )
 
-    def attempt(action, template, evaluate, raw_log_text):
+    def page(template, state, message, status=200):
+        return render_template(template, layer=state.layer, layer_count=layer_count,
+                               message=message, required=list(range(1, state.layer))), status
+
+    def attempt(action, template, evaluate, raw_log_text=THROTTLED_LOG_TEXT):
         """Shared flow for login and exit attempts.
 
         1. Reserve a concurrency slot, or reject immediately (429). Rejected
@@ -142,8 +146,7 @@ def create_app(overrides=None) -> Flask:
         if not throttle.try_enter(ip):
             log_attempt(ip=ip, sid=sid, action=action, layer=state.layer,
                         password=raw_log_text, outcome=THROTTLED)
-            return render_template(template, layer=state.layer, message=THROTTLED_MESSAGE,
-                                   required=list(range(1, state.layer))), 429
+            return page(template, state, THROTTLED_MESSAGE, 429)
         try:
             sid, state = current_session(create=True)
             if cfg["delay_enabled"]:
@@ -156,8 +159,7 @@ def create_app(overrides=None) -> Flask:
         finally:
             throttle.leave(ip)
         # Same status for every outcome: the page text is the only signal.
-        return render_template(template, layer=state.layer, message=result.message,
-                               required=list(range(1, state.layer)))
+        return page(template, state, result.message)
 
     @app.errorhandler(413)
     def request_too_large(_error):
@@ -179,24 +181,19 @@ def create_app(overrides=None) -> Flask:
     @app.get("/")
     def index():
         _, state = current_session(create=False)
-        return render_template("login.html", layer=state.layer, message="")
+        return page("login.html", state, "")
 
     @app.post("/login")
     def login():
         password = form_value("password")
-        return attempt("login", "login.html",
-                       lambda state: maze.login(state, password),
-                       maze.redact(password))
+        return attempt("login", "login.html", lambda state: maze.login(state, password))
 
     @app.route("/exit", methods=["GET", "POST"])
     def exit_flow():
         if request.method == "GET":
             _, state = current_session(create=False)
-            return render_template("exit.html", layer=state.layer,
-                                   required=list(range(1, state.layer)), message="")
-        answers = {i: form_value(f"layer{i}") for i in range(1, FINAL_LAYER)}
-        return attempt("exit", "exit.html",
-                       lambda state: maze.exit(state, answers),
-                       " | ".join(maze.redact(v) for v in answers.values() if v))
+            return page("exit.html", state, "")
+        answers = {i: form_value(f"layer{i}") for i in range(1, layer_count)}
+        return attempt("exit", "exit.html", lambda state: maze.exit(state, answers))
 
     return app

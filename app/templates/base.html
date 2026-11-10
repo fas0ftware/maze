@@ -20,7 +20,7 @@
   <main>
     {% if message %}<div class="msg">{{ message }}</div>{% endif %}
     {% block content %}{% endblock %}
-    <p class="meta">Stage {{ layer }} of 3</p>
+    <p class="meta">Stage {{ layer }} of {{ layer_count }}</p>
   </main>
 </body>
 </html>

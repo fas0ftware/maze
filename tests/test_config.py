@@ -10,8 +10,13 @@ from app.config import (
     load_layer_config,
     real_password_warnings,
 )
+from app.hashtool import hash_layer_config
+from conftest import CHEAP, real_hash_for
 
-LAYERS = {"1": ["a1"], "2": ["b2"]}
+_HASHED = hash_layer_config({"layers": {"1": ["a1"], "2": ["b2"]}}, **CHEAP)
+LAYERS = _HASHED["layers"]
+KDF = _HASHED["decoy_kdf"]
+HASH = LAYERS["1"]["decoys"][0]
 
 
 def write_cfg(tmp_path, data):
@@ -21,25 +26,46 @@ def write_cfg(tmp_path, data):
 
 
 def cfg_with(**sections):
-    return {"layers": LAYERS, **sections}
+    return {"decoy_kdf": KDF, "layers": LAYERS, **sections}
+
+
+def layers_with(**entries):
+    return cfg_with(layers={**LAYERS, **entries})
 
 
 BAD_CONFIGS = {
     "not json": "{oops",
     "top-level list": "[]",
-    "layers is a list": {"layers": []},
-    "empty layer list": {"layers": {"1": [], "2": ["b"]}},
-    "layer 2 missing": {"layers": {"1": ["a"]}},
-    "empty-string decoy": {"layers": {"1": [""], "2": ["b"]}},
-    "non-string decoy": {"layers": {"1": [5], "2": ["b"]}},
+    "layers is a list": cfg_with(layers=[]),
+    "layer is a bare list": layers_with(**{"1": [HASH]}),
+    "empty decoy list": layers_with(**{"1": {"decoys": []}}),
+    "layer 2 missing": cfg_with(layers={"1": LAYERS["1"]}),
+    "plain-text decoy": layers_with(**{"1": {"decoys": ["admin123"]}}),
+    "short hash": layers_with(**{"1": {"decoys": [HASH[:-4]]}}),
+    "non-string decoy": layers_with(**{"1": {"decoys": [5]}}),
+    "too many decoys": layers_with(**{"1": {"decoys": [HASH] * 65}}),
+    "decoys on final layer": layers_with(**{"3": {"decoys": [HASH]}}),
+    "route out of range": layers_with(**{"1": {"decoys": [HASH], "on_match": 4}}),
+    "route zero": layers_with(**{"2": {"decoys": [HASH], "on_wrong": 0}}),
+    "unknown layer": layers_with(**{"7": {"decoys": [HASH]}}),
+    "layer_count zero": cfg_with(layer_count=0),
+    "layer_count too big": cfg_with(layer_count=17),
+    "layer_count text": cfg_with(layer_count="3"),
+    "kdf missing": {"layers": LAYERS},
+    "kdf salt short": cfg_with(decoy_kdf={**KDF, "salt": "AAAA"}),
+    "kdf salt not base64": cfg_with(decoy_kdf={**KDF, "salt": "!" * 22}),
+    "kdf ops zero": cfg_with(decoy_kdf={**KDF, "opslimit": 0}),
+    "kdf ops huge": cfg_with(decoy_kdf={**KDF, "opslimit": 11}),
+    "kdf mem tiny": cfg_with(decoy_kdf={**KDF, "memlimit_kib": 4}),
+    "kdf mem huge": cfg_with(decoy_kdf={**KDF, "memlimit_kib": 10**9}),
     "limits is a string": cfg_with(limits="x"),
     "delay is a list": cfg_with(delay=[]),
     "logging is a number": cfg_with(logging=3),
     "base is text": cfg_with(delay={"base_seconds": "abc"}),
     "base is bool": cfg_with(delay={"base_seconds": True}),
     "enabled is text": cfg_with(delay={"enabled": "false"}),
-    "max is infinite": '{"layers": {"1": ["a"], "2": ["b"]}, "delay": {"max_seconds": 1e999}}',
-    "base is NaN": '{"layers": {"1": ["a"], "2": ["b"]}, "delay": {"base_seconds": NaN}}',
+    "max is infinite": json.dumps(cfg_with())[:-1] + ', "delay": {"max_seconds": 1e999}}',
+    "base is NaN": json.dumps(cfg_with())[:-1] + ', "delay": {"base_seconds": NaN}}',
     "negative base": cfg_with(delay={"base_seconds": -1}),
     "max below base": cfg_with(delay={"base_seconds": 5, "max_seconds": 1}),
     "max above cap": cfg_with(delay={"max_seconds": MAX_DELAY_CAP_SECONDS + 1}),
@@ -76,7 +102,9 @@ def test_invalid_utf8_is_a_config_error(tmp_path):
 
 
 def test_defaults_when_sections_are_omitted(tmp_path):
-    cfg = load_layer_config(write_cfg(tmp_path, {"layers": LAYERS}))
+    cfg = load_layer_config(write_cfg(tmp_path, cfg_with()))
+    assert cfg["layer_count"] == 3
+    assert cfg["routes"] == {1: (2, 1), 2: (3, 2), 3: (3, 3)}
     assert cfg["delay_enabled"] is True
     assert (cfg["delay_base"], cfg["delay_max"], cfg["delay_reset_after"]) == (1, 8, 900)
     assert (cfg["per_ip_concurrency"], cfg["global_concurrency"]) == (2, 32)
@@ -95,7 +123,27 @@ def test_max_rows_zero_means_keep_everything(tmp_path):
 
 def test_shipped_config_is_valid():
     cfg = load_layer_config(DEFAULT_LAYERS_PATH)
-    assert cfg["decoys"][1] and cfg["decoys"][2]
+    assert cfg["layer_count"] == 3
+    assert len(cfg["decoys"][1]) == 4 and len(cfg["decoys"][2]) == 4
+    # No plain text: the shipped decoys appear only as hashes.
+    assert "admin123" not in DEFAULT_LAYERS_PATH.read_text()
+
+
+def test_routes_and_layer_count_are_read(tmp_path):
+    data = cfg_with(layer_count=4, layers={
+        "1": {"decoys": [HASH], "on_match": 3, "on_wrong": 1},
+        "2": {"decoys": [HASH]},
+        "3": {"decoys": [HASH], "on_wrong": 1},
+        "4": {"on_wrong": 1},
+    })
+    cfg = load_layer_config(write_cfg(tmp_path, data))
+    assert cfg["layer_count"] == 4
+    assert cfg["routes"] == {1: (3, 1), 2: (3, 2), 3: (4, 1), 4: (4, 1)}
+
+
+def test_layers_path_env_is_used(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAZE_LAYERS_PATH", str(write_cfg(tmp_path, cfg_with(layer_count=3))))
+    assert load_layer_config()["decoys"][1]
 
 
 @pytest.mark.parametrize("raw, expected", [("0", False), ("false", False), ("1", True),
@@ -105,22 +153,32 @@ def test_env_flag_overrides_delay(monkeypatch, raw, expected):
     assert load_layer_config(DEFAULT_LAYERS_PATH)["delay_enabled"] is expected
 
 
-# --- real password quality ------------------------------------------------
+# --- real password: hash only -------------------------------------------------
 
-def test_short_real_password_logs_a_warning_without_the_password(tmp_path, monkeypatch, caplog):
-    monkeypatch.setenv("MAZE_REAL_PASSWORD", "s3cr3t")
-    with caplog.at_level(logging.WARNING, logger="maze"):
-        create_app({"DB_PATH": tmp_path / "w.db"})
-    messages = [r.getMessage() for r in caplog.records]
-    assert any("shorter than" in m for m in messages)
-    assert not any("s3cr3t" in m for m in messages)
-
-
-def test_strong_real_password_logs_no_warning(tmp_path, monkeypatch, caplog):
+def test_plain_text_real_password_is_refused(tmp_path, monkeypatch):
     monkeypatch.setenv("MAZE_REAL_PASSWORD", "a-long-random-password-9X")
-    with caplog.at_level(logging.WARNING, logger="maze"):
+    with pytest.raises(ConfigError, match="no longer accepted"):
         create_app({"DB_PATH": tmp_path / "w.db"})
-    assert caplog.records == []
+
+
+@pytest.mark.parametrize("value", ["", "plain-password", "$argon2id$v=19$m=8,t=1,p=1$AAAA$BBBB",
+                                   "$argon2i$v=19$m=8,t=1,p=1$c2FsdHNhbHRzYWx0c2FsdA$" + "A" * 43,
+                                   "$argon2id$v=19$m=8,t=99,p=1$c2FsdHNhbHRzYWx0c2FsdA$" + "A" * 43])
+def test_bad_real_password_hash_is_refused(tmp_path, monkeypatch, value):
+    monkeypatch.setenv("MAZE_REAL_PASSWORD_HASH", value)
+    with pytest.raises(ConfigError, match="MAZE_REAL_PASSWORD_HASH"):
+        create_app({"DB_PATH": tmp_path / "w.db"})
+
+
+def test_hashtool_refuses_a_decoy_as_real_password(test_layers):
+    with pytest.raises(ConfigError, match="decoy"):
+        real_hash_for(test_layers, "admin123")
+
+
+def test_short_real_password_gets_a_warning():
+    assert any("shorter than" in w for w in real_password_warnings("s3cr3t"))
+    assert not any("s3cr3t" in w for w in real_password_warnings("s3cr3t"))
+    assert real_password_warnings("a-long-random-password-9X") == []
 
 
 def test_whitespace_around_real_password_is_flagged():
