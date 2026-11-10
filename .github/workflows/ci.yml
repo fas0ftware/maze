@@ -35,5 +35,6 @@ jobs:
         cc: [gcc, clang]
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libsodium-dev pkg-config
       - run: make -C core test CC=${{ matrix.cc }}
       - run: make -C core asan CC=${{ matrix.cc }}

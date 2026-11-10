@@ -14,8 +14,12 @@ HARDEN  = -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fno-strict-overflow \
 # CFLAGS is for the user (optimisation, sanitizers); the required flags below
 # are always added, even when CFLAGS is set on the command line.
 CFLAGS  ?= -O2 -g
-MAZE_CFLAGS = $(CFLAGS) -std=c11 -D_POSIX_C_SOURCE=200809L $(WARN) $(HARDEN) -Iinclude
+SODIUM_CFLAGS := $(shell pkg-config --cflags libsodium)
+SODIUM_LIBS   := $(shell pkg-config --libs libsodium)
+MAZE_CFLAGS = $(CFLAGS) -std=c11 -D_POSIX_C_SOURCE=200809L $(WARN) $(HARDEN) \
+              -Iinclude $(SODIUM_CFLAGS)
 LDFLAGS += -Wl,-z,relro,-z,now -Wl,-z,noexecstack
+LDLIBS  += $(SODIUM_LIBS)
 
 SRCS    = $(wildcard src/*.c)
 TESTS   = $(wildcard tests/*.c)
@@ -28,10 +32,10 @@ TESTBIN = $(BUILD)/test_maze
 all: $(LIB)
 
 $(LIB): $(SRCS) include/maze.h | $(BUILD)
-	$(CC) $(MAZE_CFLAGS) -fPIC -shared -fvisibility=default $(SRCS) -o $@ $(LDFLAGS)
+	$(CC) $(MAZE_CFLAGS) -fPIC -shared -fvisibility=default $(SRCS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(TESTBIN): $(SRCS) $(TESTS) include/maze.h tests/check.h | $(BUILD)
-	$(CC) $(MAZE_CFLAGS) -fPIE $(SRCS) $(TESTS) -o $@ -pie $(LDFLAGS)
+$(TESTBIN): $(SRCS) $(TESTS) include/maze.h $(wildcard tests/*.h) | $(BUILD)
+	$(CC) $(MAZE_CFLAGS) -fPIE $(SRCS) $(TESTS) -o $@ -pie $(LDFLAGS) $(LDLIBS)
 
 test: $(TESTBIN)
 	./$(TESTBIN)

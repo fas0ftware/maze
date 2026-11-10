@@ -1,5 +1,6 @@
 #include "check.h"
 #include "maze.h"
+#include "suites.h"
 
 int check_failures = 0;
 
@@ -10,7 +11,12 @@ static void test_version(void)
 
 int main(void)
 {
+    if (maze_init() != MAZE_OK) {
+        fprintf(stderr, "maze_init failed\n");
+        return 1;
+    }
     RUN(test_version);
+    run_hash_tests();
     if (check_failures) {
         fprintf(stderr, "%d check(s) failed\n", check_failures);
         return 1;
