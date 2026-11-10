@@ -301,13 +301,35 @@ pip install -r requirements-dev.txt
 pytest -v                # Python + end-to-end tests (needs core/build/libmaze.so)
 ```
 
-The C tests cover hashing, constant-time lookup, the full layer flow, wrong
-passwords, layer skipping, decoys on the final layer, 1- and 5-layer mazes,
-routing rules, the exit flow and bad arguments. The Python tests drive the same
-engine through HTTP: layers, exit, throttling, logging and redaction, SQL
-injection payloads, config validation, sessions under concurrency, and the
-attacker simulator against a real server. The tests use the cheapest Argon2id
-settings so they run in seconds. CI runs both with gcc and clang.
+The C tests cover:
+
+- Argon2id hashing (determinism, salt, embedded NUL bytes, bad arguments) and
+  the constant-time hash lookup
+- the full layer flow, wrong passwords, layer skipping and forged layer numbers
+- decoys rejected on the final layer, 1- and 5-layer mazes, routing rules
+- the exit flow, and flags for redacting the real password
+
+The Python tests drive the same engine through HTTP and cover:
+
+- layer transitions, and the real password on and off the final layer
+- exit rules
+- hardening: equal delay for right and wrong guesses, a per-IP delay that
+  survives cookie loss and decoys, the quiet-period reset, and concurrency caps
+- config validation: every bad value (including bad hashes, routes and
+  `layer_count`) gives a `ConfigError`, never a traceback; a plain-text real
+  password is refused
+- sessions: lazy creation, expiry, size cap, a GET flood not evicting real
+  sessions, consistent state when requests overlap
+- log: sanitizing, retention, file mode, connections closed, redaction of the
+  real password when typed exactly (on any layer and in exit answers), and the
+  documented limit that near-misses are logged as typed
+- SQL injection payloads
+- oversize bodies, response headers, IPv6 grouping, entry-point errors
+  (including a missing `libmaze`)
+- an end-to-end run of the attacker simulator against a real HTTP server
+
+The tests use the cheapest Argon2id settings so they run in seconds. CI runs
+the C tests with gcc and clang, and the Python tests on Python 3.10 to 3.13.
 
 ### Attacker simulator
 
