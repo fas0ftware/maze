@@ -17,6 +17,7 @@ int main(void)
     }
     RUN(test_version);
     run_hash_tests();
+    run_engine_tests();
     if (check_failures) {
         fprintf(stderr, "%d check(s) failed\n", check_failures);
         return 1;
