@@ -22,7 +22,7 @@ from pathlib import Path
 
 DEFAULT_WORDLIST = Path(__file__).with_name("wordlist.txt")
 USER_AGENT = "maze-attacker-sim/0.1"
-LAYER_RE = re.compile(r"Stage (\d) of 3")
+LAYER_RE = re.compile(r"Stage (\d+) of \d+")
 MESSAGE_RE = re.compile(r'<div class="msg">(.*?)</div>')
 # The service exposes no machine-readable markers; like a real attacker,
 # we infer the result from the visible message.

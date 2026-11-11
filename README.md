@@ -1,5 +1,12 @@
 # Maze
 
+[![CI](https://github.com/fas0ftware/maze/actions/workflows/ci.yml/badge.svg)](https://github.com/fas0ftware/maze/actions/workflows/ci.yml)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![C11](https://img.shields.io/badge/engine-C11%20%2B%20libsodium-555)
+![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
+![Docker](https://img.shields.io/badge/docker-non--root%20%C2%B7%20read--only-2496ED)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 Maze is a layered honeypot and deception service. It shows a fake web login
 page. An attacker who starts guessing passwords is led through a maze of fake
 progress: every correct decoy says "First password found" and asks for the
@@ -7,9 +14,11 @@ next one, the last layer rejects everything except the real password, and a
 fake exit sends them back to the start. Replies get slower, and every move is
 logged. The point is to keep the attacker busy, and to buy time to find them.
 
-> **Status:** v0.2. The core engine is written in **C** (`core/`, libsodium
+> **Status:** v0.3. The core engine is written in **C** (`core/`, libsodium
 > Argon2id). A small Python/Flask layer serves the web pages, keeps sessions,
-> throttles and logs, and calls the engine through `ctypes`.
+> throttles and logs, and calls the engine through `ctypes`. New in v0.3:
+> **Minator** (a passive attacker report), a **Docker image**, and a
+> **timing test** that proves the final layer has no timing oracle.
 >
 > **For local testing only.** Do not expose Maze to the internet without isolation.
 
@@ -20,6 +29,8 @@ logged. The point is to keep the attacker busy, and to buy time to find them.
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
 - [Logging](#logging)
+- [Minator: attacker report](#minator-attacker-report)
+- [Docker](#docker)
 - [Testing](#testing)
 - [Project layout](#project-layout)
 - [Security notes](#security-notes)
@@ -76,26 +87,9 @@ The shipped `config/layers.json` has demo decoys that match
 
 ### Example run
 
-The attacker simulator against a local instance (`MAZE_DELAY_ENABLED=0`):
+The attacker simulator against the Docker image (`MAZE_DELAY_ENABLED=0`):
 
-```
-$ python tools/attacker_sim.py
-[*] Target http://127.0.0.1:5000 - starting on layer 1
-    layer 1  try '123456'           -> wrong         ( 0.1s)
-    layer 1  try 'password'         -> wrong         ( 0.1s)
-    layer 1  try 'admin123'         -> decoy_found   ( 0.1s)
-[+] Layer 1 password found: 'admin123'. Now on layer 2.
-    layer 2  try 'qwerty'           -> wrong         ( 0.1s)
-    layer 2  try 'SuperSecret99'    -> decoy_found   ( 0.1s)
-[+] Layer 2 password found: 'SuperSecret99'. Now on layer 3.
-    layer 3  try 'root!2024'        -> wrong         ( 0.1s)
-    layer 3  try 'hunter2'          -> wrong         ( 0.1s)
-    layer 3  try 'letmein'          -> wrong         ( 0.1s)
-    layer 3  try 'trustno1'         -> wrong         ( 0.1s)
-[*] Wordlist done. Reached layer 3.
-[*] Exit with wrong passwords           -> exit_denied
-[*] Exit with collected layer passwords -> exit_granted (back on layer 1)
-```
+![Attacker simulator against the container](docs/attacker-sim.svg)
 
 `root!2024` and `letmein` are decoys too, but on the final layer they are just
 "wrong". With delays on (the default) the same run waits 1, 2, 4, then 8
@@ -292,6 +286,63 @@ All input is treated as untrusted:
 sqlite3 maze.db "SELECT datetime(ts,'unixepoch'), ip, layer, outcome, password FROM attempts ORDER BY id DESC LIMIT 20"
 ```
 
+## Minator: attacker report
+
+Minator turns the attempt log into a report: who attacked, for how long they
+were kept busy, how deep into the maze they got, and what kind of attacker
+they look like. It **only reads** the log (opened read-only); it never contacts,
+blocks or probes anyone.
+
+```bash
+python -m app.report                              # text report of ./maze.db (or MAZE_DB_PATH)
+python -m app.report --format html -o report.html # self-contained HTML (written with mode 0600)
+python -m app.report --format json --since 24     # last 24 hours as JSON
+python tools/demo_log.py demo.db && python -m app.report --db demo.db   # try it on sample data
+```
+
+Per source it reports attempts, **time kept busy** (gaps between attempts,
+ignoring pauses longer than 30 minutes), sessions, deepest layer, decoys taken,
+exit attempts, guess timing and user agents, and tags such as:
+
+| Tag | Meaning |
+|-----|---------|
+| `tool user-agent` | Hydra, sqlmap, curl, python-requests, Go-http-client, … |
+| `automated (regular timing)` | Gaps between guesses vary by less than 15 % |
+| `common wordlist` | Most guesses are in a list of the most common leaked passwords |
+| `injection probes` | SQL injection, XSS, Log4Shell, path traversal payloads in the password field |
+| `took the bait` / `tried the exit` | Found a decoy / used the fake exit |
+| `N sessions (cookie reset)` | Dropped the cookie to try to reset its state |
+| `REAL PASSWORD USED` | The real password was entered: threat level **critical** |
+
+![Minator HTML report (sample data)](docs/minator-report.png)
+
+<details><summary>Text output</summary>
+
+![Minator text report (sample data)](docs/minator-text.svg)
+
+</details>
+
+The sample log uses only documentation addresses (RFC 5737 / RFC 3849). All
+attacker-supplied text is escaped in every format, and the HTML report carries
+a `default-src 'none'` Content-Security-Policy, so it can never run script.
+
+## Docker
+
+```bash
+docker build -t maze .
+# hash the real password on the host (python -m app.hashtool real), then:
+docker run --rm -p 127.0.0.1:5000:5000 --read-only --tmpfs /tmp \
+  --cap-drop ALL --security-opt no-new-privileges \
+  -e MAZE_REAL_PASSWORD_HASH='$argon2id$v=19$...' -v maze-data:/data maze
+docker exec <container> python -m app.report --db /data/maze.db
+```
+
+The image is built in two stages: the C engine is compiled **and its tests run**
+in the build stage; the runtime stage only contains Python, Flask, libsodium and
+`libmaze.so`, runs as an unprivileged user (uid 10001), works with a read-only
+root filesystem, stores the log in the `/data` volume and has a health check.
+CI builds the image and runs the attacker simulator against it.
+
 ## Testing
 
 ```bash
@@ -328,8 +379,24 @@ The Python tests drive the same engine through HTTP and cover:
   (including a missing `libmaze`)
 - an end-to-end run of the attacker simulator against a real HTTP server
 
+- **timing:** the final layer takes the same time for the real password, both
+  decoys and wrong guesses (medians of 150 interleaved runs; measured ratio
+  1.001, the test fails above 1.5)
+- **Minator:** busy-time maths, bot / wordlist / injection detection, the
+  critical tag, escaping of hostile input in text and HTML, read-only access,
+  private output files, the sample-log tool
+
 The tests use the cheapest Argon2id settings so they run in seconds. CI runs
-the C tests with gcc and clang, and the Python tests on Python 3.10 to 3.13.
+the C tests with gcc and clang (plus AddressSanitizer/UBSan), the Python tests
+on Python 3.10 to 3.13, bandit and pip-audit, and a Docker smoke test.
+
+![C engine tests](docs/c-tests.svg)
+
+![Python tests](docs/test-results.svg)
+
+### Security scan
+
+![Security scan](docs/security-scan.svg)
 
 ### Attacker simulator
 
@@ -356,6 +423,7 @@ app/
   core.py            ctypes binding to libmaze, PHC hash strings
   maze.py            Sessions, messages, log redaction on top of the engine
   hashtool.py        python -m app.hashtool: hash decoys and the real password
+  report.py          python -m app.report: Minator, the passive attacker report
   throttle.py        Per-IP back-off delay and concurrency caps
   storage.py         SQLite attempt log and input sanitizing
   config.py          Config loading and validation
@@ -364,7 +432,9 @@ config/layers.json   Decoy hashes, routes and tunables (no plain text)
 tests/               pytest suite
 tools/
   attacker_sim.py    Local attacker simulator
+  demo_log.py        Sample attempt log for trying Minator
   wordlist.txt       Demo wordlist
+Dockerfile           Two-stage, non-root, read-only-friendly image
 ```
 
 ## Security notes
@@ -380,8 +450,8 @@ tools/
 - Each guess costs about 19 MiB of memory while it is hashed, so the global
   concurrency cap (32) bounds memory use at about 600 MiB. Lower
   `global_concurrency` or `memlimit_kib` on small machines.
-- The prototype uses Flask's development server. Sessions and throttle state
-  live in memory and are lost on restart.
+- The prototype uses Flask's development server (also inside the container).
+  Sessions and throttle state live in memory and are lost on restart.
 - Every response carries `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, `Cache-Control: no-store` and a strict
   `Content-Security-Policy` (no scripts, no framing).
@@ -393,18 +463,20 @@ tools/
 ## Roadmap
 
 1. **Layer engine in C**: done in v0.2.
-2. **Dwell-time measurement**: per-session "total time kept busy" from the log,
-   with a report.
-3. **Minator**: a **passive** detection and reporting tool. It reads the attempt
-   log and reports on attackers: IP addresses, guessing patterns (wordlists,
-   decoy reuse, exit attempts) and timing. It never acts against the attacker:
-   no counter-attack, no hack-back, no blocking or interfering with their
-   systems.
-4. **More tests**: timing tests that measure that the final layer takes the same
-   time for the real password, a decoy and a wrong guess.
-5. Docker image, persistent session and throttle state, an SSH-like entrance.
+2. **Dwell-time measurement**: done in v0.3 (Minator's "kept busy" time).
+3. **Minator**: done in v0.3 as a passive report (text, JSON, HTML). Next:
+   per-session timelines and scheduled reports.
+4. **Timing tests** for the final layer: done in v0.3.
+5. **Docker image**: done in v0.3. Next: persistent session and throttle
+   state, a production WSGI server, an SSH-like entrance.
 
 Maze will not include hack-back or any offensive action against real systems.
+
+## Changelog
+
+- **0.3.0** – Minator passive attacker report (`python -m app.report`: text / JSON / HTML, busy time, bot / wordlist / injection detection, threat levels), sample-log tool, timing test for the final layer, Docker image (two-stage, non-root, read-only) with CI smoke test, bandit + pip-audit in CI; fixed a start-up crash on Python 3.10–3.13 (a dataclass field named `core` shadowed the module in its own annotation; only Python 3.14 tolerated it); the simulator now reads any layer count.
+- **0.2.0** – Layer engine rewritten in C with libsodium Argon2id; hashed decoys and real password only.
+- **0.1.0** – Python prototype.
 
 ## License
 

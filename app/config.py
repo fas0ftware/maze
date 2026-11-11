@@ -18,9 +18,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LAYERS_PATH = PROJECT_ROOT / "config" / "layers.json"
 DEFAULT_DB_PATH = PROJECT_ROOT / "maze.db"
 
-REAL_PASSWORD_HASH_ENV = "MAZE_REAL_PASSWORD_HASH"
+REAL_PASSWORD_HASH_ENV = "MAZE_REAL_PASSWORD_HASH"  # env var name, not a secret  # nosec B105
 # Plain-text variable of earlier versions; refused so it is not used by mistake.
-LEGACY_REAL_PASSWORD_ENV = "MAZE_REAL_PASSWORD"
+LEGACY_REAL_PASSWORD_ENV = "MAZE_REAL_PASSWORD"  # env var name, not a secret  # nosec B105
 LAYERS_PATH_ENV = "MAZE_LAYERS_PATH"
 HASH_TOOL_HINT = "Create it with: python -m app.hashtool real"
 

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="777" height="460" viewBox="0 0 777 460">
+<rect width="100%" height="100%" rx="10" fill="#0d1117" stroke="#30363d"/>
+<rect width="100%" height="32" rx="10" fill="#161b22"/><rect y="22" width="100%" height="10" fill="#161b22"/>
+<circle cx="18" cy="16" r="6" fill="#ff5f56"/><circle cx="38" cy="16" r="6" fill="#ffbd2e"/><circle cx="58" cy="16" r="6" fill="#27c93f"/>
+<text x="389" y="21" fill="#8b949e" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" text-anchor="middle">maze — attacker simulator vs. Docker container</text>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" xml:space="preserve">
+<text x="14" y="56" fill="#58a6ff">$ python tools/attacker_sim.py --url http://127.0.0.1:5077   # against the Docker container</text>
+<text x="14" y="74" fill="#e6edf3">[*] Target http://127.0.0.1:5077 - starting on layer 1</text>
+<text x="14" y="92" fill="#e6edf3">    layer 1  try &#x27;123456&#x27;           -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="110" fill="#e6edf3">    layer 1  try &#x27;password&#x27;         -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="128" fill="#e6edf3">    layer 1  try &#x27;admin123&#x27;         -&gt; decoy_found   ( 0.1s)</text>
+<text x="14" y="146" fill="#e6edf3">[+] Layer 1 password found: &#x27;admin123&#x27;. Now on layer 2.</text>
+<text x="14" y="164" fill="#e6edf3">    layer 2  try &#x27;qwerty&#x27;           -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="182" fill="#e6edf3">    layer 2  try &#x27;SuperSecret99&#x27;    -&gt; decoy_found   ( 0.1s)</text>
+<text x="14" y="200" fill="#e6edf3">[+] Layer 2 password found: &#x27;SuperSecret99&#x27;. Now on layer 3.</text>
+<text x="14" y="218" fill="#e6edf3">    layer 3  try &#x27;root!2024&#x27;        -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="236" fill="#e6edf3">    layer 3  try &#x27;hunter2&#x27;          -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="254" fill="#e6edf3">    layer 3  try &#x27;letmein&#x27;          -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="272" fill="#e6edf3">    layer 3  try &#x27;trustno1&#x27;         -&gt; wrong         ( 0.1s)</text>
+<text x="14" y="290" fill="#e6edf3">[*] Wordlist done. Reached layer 3.</text>
+<text x="14" y="308" fill="#e6edf3">[*] Exit with wrong passwords           -&gt; exit_denied</text>
+<text x="14" y="326" fill="#e6edf3">[*] Exit with collected layer passwords -&gt; exit_granted (back on layer 1)</text>
+<text x="14" y="344" fill="#e6edf3"></text>
+<text x="14" y="362" fill="#e6edf3">=== Summary ===</text>
+<text x="14" y="380" fill="#e6edf3">  layer 1: &#x27;admin123&#x27;</text>
+<text x="14" y="398" fill="#e6edf3">  layer 2: &#x27;SuperSecret99&#x27;</text>
+<text x="14" y="416" fill="#e6edf3">  layer 3: &#x27;-&#x27;</text>
+<text x="14" y="434" fill="#e6edf3">  total time: 0.9s (server-side stalling included)</text>
+</g></svg>

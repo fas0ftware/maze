@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="442" viewBox="0 0 720 442">
+<rect width="100%" height="100%" rx="10" fill="#0d1117" stroke="#30363d"/>
+<rect width="100%" height="32" rx="10" fill="#161b22"/><rect y="22" width="100%" height="10" fill="#161b22"/>
+<circle cx="18" cy="16" r="6" fill="#ff5f56"/><circle cx="38" cy="16" r="6" fill="#ffbd2e"/><circle cx="58" cy="16" r="6" fill="#27c93f"/>
+<text x="360" y="21" fill="#8b949e" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" text-anchor="middle">maze — C engine tests</text>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" xml:space="preserve">
+<text x="14" y="56" fill="#58a6ff">$ make -C core test</text>
+<text x="14" y="74" fill="#3fb950">PASS test_version</text>
+<text x="14" y="92" fill="#3fb950">PASS test_hash_is_deterministic</text>
+<text x="14" y="110" fill="#3fb950">PASS test_hash_depends_on_password_and_salt</text>
+<text x="14" y="128" fill="#3fb950">PASS test_hash_uses_length_not_nul</text>
+<text x="14" y="146" fill="#3fb950">PASS test_hash_empty_password</text>
+<text x="14" y="164" fill="#3fb950">PASS test_hash_rejects_bad_arguments</text>
+<text x="14" y="182" fill="#3fb950">PASS test_random_salt_differs</text>
+<text x="14" y="200" fill="#3fb950">PASS test_find_scans_list</text>
+<text x="14" y="218" fill="#3fb950">PASS test_full_flow</text>
+<text x="14" y="236" fill="#3fb950">PASS test_wrong_password_stays</text>
+<text x="14" y="254" fill="#3fb950">PASS test_no_layer_skipping</text>
+<text x="14" y="272" fill="#3fb950">PASS test_final_layer_rejects_decoys</text>
+<text x="14" y="290" fill="#3fb950">PASS test_configurable_layer_count</text>
+<text x="14" y="308" fill="#3fb950">PASS test_routing_rules</text>
+<text x="14" y="326" fill="#3fb950">PASS test_engine_rejects_bad_setup</text>
+<text x="14" y="344" fill="#3fb950">PASS test_exit_flow</text>
+<text x="14" y="362" fill="#3fb950">PASS test_exit_needs_cleared_layers</text>
+<text x="14" y="380" fill="#3fb950">PASS test_real_password_is_flagged_for_redaction</text>
+<text x="14" y="398" fill="#3fb950">PASS test_abi_sizes</text>
+<text x="14" y="416" fill="#3fb950">all C tests passed</text>
+</g></svg>

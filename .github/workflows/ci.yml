@@ -1,4 +1,4 @@
-name: tests
+name: CI
 
 on:
   push:
@@ -40,3 +40,32 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libsodium-dev pkg-config
       - run: make -C core test CC=${{ matrix.cc }}
       - run: make -C core asan CC=${{ matrix.cc }}
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit pip-audit
+      - name: Static analysis (bandit)
+        run: bandit -q -r app tools
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r requirements.txt
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t maze .
+      - name: Smoke test (non-root, read-only, serves the login page)
+        run: |
+          pip install -q flask
+          HASH=$(docker run --rm --entrypoint python maze -c "from app.config import load_layer_config, DEFAULT_LAYERS_PATH; from app.hashtool import real_password_hash; print(real_password_hash('ci-only-not-a-real-secret-pw', load_layer_config(DEFAULT_LAYERS_PATH), opslimit=1, memlimit_kib=8))")
+          docker run -d --name maze -p 127.0.0.1:5000:5000 --read-only --tmpfs /tmp --cap-drop ALL \
+            -e MAZE_REAL_PASSWORD_HASH="$HASH" -e MAZE_DELAY_ENABLED=0 maze
+          for i in $(seq 30); do curl -fsS http://127.0.0.1:5000/ >/dev/null && break; sleep 1; done
+          test "$(docker exec maze id -u)" = 10001
+          python tools/attacker_sim.py --url http://127.0.0.1:5000
+          docker exec maze python -m app.report --db /data/maze.db

@@ -6,6 +6,8 @@ store, turns engine results into visible messages, and decides what is safe
 to write to the log.
 """
 
+from __future__ import annotations
+
 import secrets
 import threading
 import time
@@ -29,7 +31,7 @@ EXIT_DENIED_MESSAGE = "Exit denied. Previous layer passwords do not match."
 
 # Placeholder written to the log instead of the real password, so the
 # secret never ends up in the database.
-REAL_PASSWORD_REDACTED = "[REDACTED:REAL_PASSWORD]"
+REAL_PASSWORD_REDACTED = "[REDACTED:REAL_PASSWORD]"  # log placeholder, not a secret  # nosec B105
 # What is logged when the body was too large to read at all.
 OVERSIZE_LOG_TEXT = "[oversize request body]"
 # What is logged for a throttled request. It is rejected before any hashing,

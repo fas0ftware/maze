@@ -1,0 +1,15 @@
+.git
+.github
+venv
+.venv
+**/__pycache__
+.pytest_cache
+*.db
+*.db-*
+.env
+.env.*
+config/*.plain.json
+core/build
+docs
+tests
+tools
