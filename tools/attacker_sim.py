@@ -63,7 +63,8 @@ class Client:
             with self.opener.open(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as err:  # 429 when throttled
-            html = err.read().decode("utf-8", "replace")
+            with err:  # close the response; Python 3.14 warns about unclosed ones
+                html = err.read().decode("utf-8", "replace")
         found = LAYER_RE.search(html)
         if found is None:
             # Not a Maze page (404, proxy error, ...): keep the last known layer.

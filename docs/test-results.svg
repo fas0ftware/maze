@@ -1,64 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="785" height="1090" viewBox="0 0 785 1090">
+<svg xmlns="http://www.w3.org/2000/svg" width="826" height="154" viewBox="0 0 826 154">
 <rect width="100%" height="100%" rx="10" fill="#0d1117" stroke="#30363d"/>
 <rect width="100%" height="32" rx="10" fill="#161b22"/><rect y="22" width="100%" height="10" fill="#161b22"/>
 <circle cx="18" cy="16" r="6" fill="#ff5f56"/><circle cx="38" cy="16" r="6" fill="#ffbd2e"/><circle cx="58" cy="16" r="6" fill="#27c93f"/>
-<text x="393" y="21" fill="#8b949e" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" text-anchor="middle">maze — pytest (Python + end-to-end)</text>
+<text x="413" y="21" fill="#8b949e" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" text-anchor="middle">maze — pytest</text>
 <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" xml:space="preserve">
-<text x="14" y="56" fill="#58a6ff">$ python -m pytest -v</text>
-<text x="14" y="74" fill="#e6edf3">============================= test session starts ==============================</text>
-<text x="14" y="92" fill="#e6edf3">platform linux -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0 -- python</text>
-<text x="14" y="110" fill="#e6edf3">rootdir: .</text>
-<text x="14" y="128" fill="#e6edf3">configfile: pytest.ini</text>
-<text x="14" y="146" fill="#e6edf3">testpaths: tests</text>
-<text x="14" y="164" fill="#e6edf3">plugins: anyio-4.16.0, platformdirs-4.14.5</text>
-<text x="14" y="182" fill="#e6edf3">collecting ... collected 200 items</text>
-<text x="14" y="200" fill="#e6edf3"></text>
-<text x="14" y="218" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[not json] PASSED [  0%]</text>
-<text x="14" y="236" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[top-level list] PASSED [  1%]</text>
-<text x="14" y="254" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[layers is a list] PASSED [  1%]</text>
-<text x="14" y="272" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[layer is a bare list] PASSED [  2%]</text>
-<text x="14" y="290" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[empty decoy list] PASSED [  2%]</text>
-<text x="14" y="308" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[layer 2 missing] PASSED [  3%]</text>
-<text x="14" y="326" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[plain-text decoy] PASSED [  3%]</text>
-<text x="14" y="344" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[short hash] PASSED [  4%]</text>
-<text x="14" y="362" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[non-string decoy] PASSED [  4%]</text>
-<text x="14" y="380" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[too many decoys] PASSED [  5%]</text>
-<text x="14" y="398" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[decoys on final layer] PASSED [  5%]</text>
-<text x="14" y="416" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[route out of range] PASSED [  6%]</text>
-<text x="14" y="434" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[route zero] PASSED [  6%]</text>
-<text x="14" y="452" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[unknown layer] PASSED [  7%]</text>
-<text x="14" y="470" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[layer_count zero] PASSED [  7%]</text>
-<text x="14" y="488" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[layer_count too big] PASSED [  8%]</text>
-<text x="14" y="506" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[layer_count text] PASSED [  8%]</text>
-<text x="14" y="524" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[kdf missing] PASSED [  9%]</text>
-<text x="14" y="542" fill="#3fb950">tests/test_config.py::test_bad_config_is_a_config_error[kdf salt short] PASSED [  9%]</text>
-<text x="14" y="560" fill="#e6edf3">... (155 lines omitted) ...</text>
-<text x="14" y="578" fill="#3fb950">tests/test_sim_integration.py::test_sim_load_words_skips_blanks_and_comments PASSED [ 87%]</text>
-<text x="14" y="596" fill="#3fb950">tests/test_storage.py::test_sanitize_none_and_empty PASSED               [ 88%]</text>
-<text x="14" y="614" fill="#3fb950">tests/test_storage.py::test_sanitize_truncates_with_marker PASSED        [ 88%]</text>
-<text x="14" y="632" fill="#3fb950">tests/test_storage.py::test_sanitize_exact_length_is_not_truncated PASSED [ 89%]</text>
-<text x="14" y="650" fill="#3fb950">tests/test_storage.py::test_sanitize_escapes_control_and_format_characters PASSED [ 89%]</text>
-<text x="14" y="668" fill="#3fb950">tests/test_storage.py::test_sanitize_keeps_normal_unicode PASSED         [ 90%]</text>
-<text x="14" y="686" fill="#3fb950">tests/test_storage.py::test_prune_keeps_only_the_newest_rows PASSED      [ 90%]</text>
-<text x="14" y="704" fill="#3fb950">tests/test_storage.py::test_automatic_pruning_bounds_the_table PASSED    [ 91%]</text>
-<text x="14" y="722" fill="#3fb950">tests/test_storage.py::test_max_rows_zero_keeps_everything PASSED        [ 91%]</text>
-<text x="14" y="740" fill="#3fb950">tests/test_storage.py::test_seconds_since_prev_uses_the_same_ip PASSED   [ 92%]</text>
-<text x="14" y="758" fill="#3fb950">tests/test_storage.py::test_new_database_file_is_private PASSED          [ 92%]</text>
-<text x="14" y="776" fill="#3fb950">tests/test_storage.py::test_existing_database_permissions_are_left_alone PASSED [ 93%]</text>
-<text x="14" y="794" fill="#3fb950">tests/test_storage.py::test_connections_are_closed PASSED                [ 93%]</text>
-<text x="14" y="812" fill="#3fb950">tests/test_throttle.py::test_delay_sequence_for_wrong_guesses PASSED     [ 94%]</text>
-<text x="14" y="830" fill="#3fb950">tests/test_throttle.py::test_correct_and_wrong_guess_wait_the_same PASSED [ 94%]</text>
-<text x="14" y="848" fill="#3fb950">tests/test_throttle.py::test_success_is_delayed_too PASSED               [ 95%]</text>
-<text x="14" y="866" fill="#3fb950">tests/test_throttle.py::test_dropping_cookie_does_not_reset_delay PASSED [ 95%]</text>
-<text x="14" y="884" fill="#3fb950">tests/test_throttle.py::test_finding_a_decoy_does_not_reset_delay PASSED [ 96%]</text>
-<text x="14" y="902" fill="#3fb950">tests/test_throttle.py::test_delay_resets_after_quiet_period PASSED      [ 96%]</text>
-<text x="14" y="920" fill="#3fb950">tests/test_throttle.py::test_failed_exit_counts_toward_delay PASSED      [ 97%]</text>
-<text x="14" y="938" fill="#3fb950">tests/test_throttle.py::test_per_ip_concurrency_limit PASSED             [ 97%]</text>
-<text x="14" y="956" fill="#3fb950">tests/test_throttle.py::test_throttled_real_password_is_not_stored PASSED [ 98%]</text>
-<text x="14" y="974" fill="#3fb950">tests/test_throttle.py::test_global_concurrency_limit PASSED             [ 98%]</text>
-<text x="14" y="992" fill="#3fb950">tests/test_throttle.py::test_slots_released_after_requests PASSED        [ 99%]</text>
-<text x="14" y="1010" fill="#3fb950">tests/test_timing.py::test_final_layer_time_does_not_depend_on_the_password PASSED [ 99%]</text>
-<text x="14" y="1028" fill="#3fb950">tests/test_timing.py::test_final_layer_outcomes_are_still_correct PASSED [100%]</text>
-<text x="14" y="1046" fill="#e6edf3"></text>
-<text x="14" y="1064" fill="#3fb950">============================= 200 passed in 3.40s ==============================</text>
+<text x="14" y="56" fill="#58a6ff">$ python -m pytest -q -W error::ResourceWarning</text>
+<text x="14" y="74" fill="#e6edf3">........................................................................ [ 35%]</text>
+<text x="14" y="92" fill="#e6edf3">........................................................................ [ 71%]</text>
+<text x="14" y="110" fill="#e6edf3">..........................................................               [100%]</text>
+<text x="14" y="128" fill="#3fb950">202 passed in 3.61s</text>
 </g></svg>
