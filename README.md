@@ -1,7 +1,7 @@
 # Maze
 
 [![CI](https://github.com/fas0ftware/maze/actions/workflows/ci.yml/badge.svg)](https://github.com/fas0ftware/maze/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.1-blue)
 ![C11](https://img.shields.io/badge/engine-C11%20%2B%20libsodium-555)
 ![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
 ![Docker](https://img.shields.io/badge/docker-non--root%20%C2%B7%20read--only-2496ED)
@@ -199,6 +199,7 @@ Maze slows attackers down. It does **not** make a weak password strong. Use
 | `MAZE_LIB` | `./core/build/libmaze.so` | Path of the C engine |
 | `MAZE_HOST` | `127.0.0.1` | Bind address (prints a warning when not loopback) |
 | `MAZE_PORT` | `5000` | Port |
+| `MAZE_SERVER` | `waitress` | `waitress` (production WSGI server: a fixed thread pool, slow clients cannot tie up threads, at most 500 open connections, no `Server` header) or `dev` (Flask's development server, local debugging only) |
 | `MAZE_DB_PATH` | `./maze.db` | SQLite log file |
 | `MAZE_DELAY_ENABLED` | from config | `0` turns delays off (demos only) |
 | `MAZE_SECRET_KEY` | random per start | Cookie signing key |
@@ -468,11 +469,13 @@ Dockerfile           Two-stage, non-root, read-only-friendly image
    per-session timelines and scheduled reports.
 4. **Timing tests** for the final layer: done in v0.3.
 5. **Docker image**: done in v0.3. Next: persistent session and throttle
-   state, a production WSGI server, an SSH-like entrance.
+   state, an SSH-like entrance. (Production WSGI server: done in v0.3.1.)
 
 Maze will not include hack-back or any offensive action against real systems.
 
 ## Changelog
+
+- **0.3.1** – Served by waitress instead of Flask's development server. With 300 slow (slowloris-style) clients the development server ran 301 threads, waitress stays at a fixed pool (37 threads with the default limits) and keeps answering normal requests; open connections are capped and idle ones time out after 30 s. `MAZE_SERVER=dev` keeps the old server for local debugging.
 
 - **0.3.0** – Minator passive attacker report (`python -m app.report`: text / JSON / HTML, busy time, bot / wordlist / injection detection, threat levels), sample-log tool, timing test for the final layer, Docker image (two-stage, non-root, read-only) with CI smoke test, bandit + pip-audit in CI; fixed a start-up crash on Python 3.10–3.13 (a dataclass field named `core` shadowed the module in its own annotation; only Python 3.14 tolerated it); the simulator now reads any layer count.
 - **0.2.0** – Layer engine rewritten in C with libsodium Argon2id; hashed decoys and real password only.
