@@ -7,24 +7,43 @@
 ![Docker](https://img.shields.io/badge/docker-non--root%20%C2%B7%20read--only-2496ED)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Maze is a layered honeypot and deception service. It shows a fake web login
-page. An attacker who starts guessing passwords is led through a maze of fake
-progress: every correct decoy says "First password found" and asks for the
-next one, the last layer rejects everything except the real password, and a
-fake exit sends them back to the start. Replies get slower, and every move is
-logged. The point is to keep the attacker busy, and to buy time to find them.
+**A fake login page that keeps attackers busy, and tells you who they are.**
 
-> **Status:** v0.3. The core engine is written in **C** (`core/`, libsodium
-> Argon2id). A small Python/Flask layer serves the web pages, keeps sessions,
-> throttles and logs, and calls the engine through `ctypes`. New in v0.3:
-> **Minator** (a passive attacker report), a **Docker image**, and a
-> **timing test** that proves the final layer has no timing oracle.
->
-> **For local testing only.** Do not expose Maze to the internet without isolation.
+Maze is a layered honeypot. An attacker who starts guessing passwords is led
+through a maze of fake progress: a password from a leaked list "works", the
+next stage asks for another one, the last stage accepts only the real password,
+and the "exit" sends them back to the start. Replies get slower with every
+failure, and every move is logged for **Minator**, a report of who attacked,
+how long they were kept busy and what kind of attacker they look like.
+
+![An attacker's walk through Maze (real screenshots, demo decoys)](docs/maze-demo.gif)
+
+**What is interesting inside**
+
+- **C engine** (`core/`, libsodium Argon2id) that makes every decision; Python
+  never compares a password. Built with `-Werror`, stack protector, full RELRO,
+  tested under AddressSanitizer and UBSan.
+- **No timing oracle.** Every guess costs the same two Argon2id hashes and a
+  constant-time scan; the final layer takes the same time for the real
+  password, a decoy or garbage (measured ratio 1.001 over 150 interleaved runs).
+- **Throttling an attacker cannot reset:** per-IP back-off applied *before* the
+  password is looked at, IPv6 grouped by /64, per-IP and global concurrency
+  caps, a production WSGI server that survives slowloris.
+- **Minator**, a passive report (text, JSON, HTML) that tags tool user agents,
+  bot-like timing, common wordlists and injection payloads.
+- **Hardened delivery:** non-root, read-only Docker image whose build runs the
+  C tests; CI with gcc and clang, Python 3.10 to 3.13, bandit, pip-audit and an
+  attacker simulator against the container.
+
+> **The code is safe to share; the running service needs isolation.** Run Maze
+> on your machine for testing, or as a real honeypot on a separate, disposable
+> host with no access to real systems. Do not expose it to the internet from
+> your home network. See [Security notes](#security-notes).
 
 ## Contents
 
 - [Concept](#concept)
+- [Demo](#demo)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
@@ -57,6 +76,17 @@ logged. The point is to keep the attacker busy, and to buy time to find them.
   That only sends them back to layer 1: more time spent, more log data.
 - No password is stored in plain text. Decoys and the real password are kept
   only as Argon2id hashes.
+
+## Demo
+
+Seven steps of an attacker's session, captured from a real run with the demo
+decoys of `config/layers.json` (`docs/maze-demo.gif` above is the same run):
+
+![Storyboard: an attacker's walk through Maze](docs/maze-journey.png)
+
+To make the images again: start Maze with `MAZE_DELAY_ENABLED=0`, then
+`node tools/demo/shoot.js http://127.0.0.1:5000 frames` (Playwright) and
+`python tools/demo/compose.py frames docs` (Pillow).
 
 ## Quick start
 
@@ -440,8 +470,8 @@ Dockerfile           Two-stage, non-root, read-only-friendly image
 
 ## Security notes
 
-- **For local testing only. Do not expose Maze to the internet without
-  isolation.** If you run it as a real honeypot, use a separate, disposable
+- **Do not expose Maze to the internet without isolation.** If you run it as a
+  real honeypot, use a separate, disposable
   host, VM or container with no access to real systems or credentials, and
   filter its outbound traffic.
 - The C engine is built with `-Wall -Wextra -Werror -Wconversion`, stack
@@ -451,8 +481,9 @@ Dockerfile           Two-stage, non-root, read-only-friendly image
 - Each guess costs about 19 MiB of memory while it is hashed, so the global
   concurrency cap (32) bounds memory use at about 600 MiB. Lower
   `global_concurrency` or `memlimit_kib` on small machines.
-- The prototype uses Flask's development server (also inside the container).
-  Sessions and throttle state live in memory and are lost on restart.
+- Maze is served by waitress (also inside the container); Flask's development
+  server is only used with `MAZE_SERVER=dev`. Sessions and throttle state live
+  in memory and are lost on restart.
 - Every response carries `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, `Cache-Control: no-store` and a strict
   `Content-Security-Policy` (no scripts, no framing).
@@ -474,6 +505,10 @@ Dockerfile           Two-stage, non-root, read-only-friendly image
 Maze will not include hack-back or any offensive action against real systems.
 
 ## Changelog
+
+- **Docs** – README rewritten as a project page: a demo GIF and a storyboard of
+  a real attacker session (made by `tools/demo/`), highlights first, version
+  notes moved here; the security notes no longer mention the development server.
 
 - **0.3.1** – Served by waitress instead of Flask's development server. With 300 slow (slowloris-style) clients the development server ran 301 threads, waitress stays at a fixed pool (37 threads with the default limits) and keeps answering normal requests; open connections are capped and idle ones time out after 30 s. `MAZE_SERVER=dev` keeps the old server for local debugging.
 
